@@ -1,0 +1,21 @@
+---
+common-parameters:
+  KmsDecryptLambdaArn: !StackOutput rubix-sport-live-kms-decrypt-lambda.KmsDecryptLambdaArn
+
+stacks:
+  - name: rubix-sport-live-kms-decrypt-lambda
+    template: support/kms-parameters-lambda.cf.yaml
+    parameters:
+      LambdaSourceS3Key: !LambdaZip kmsParameters.zip
+      LambdaExecutionRoleArn: arn:aws:iam::000000000000:role/KMSDecryptLambdaRole
+
+  - name: my-project
+    template: my-project.cf.yaml
+    parameters:
+      VpcId: vpc-00000000
+      PrivateSubnets: subnet-00000000,subnet-00000000
+      ServerInstanceType: t2.small
+      ServerAmi: ami-9d58b6ff
+
+
+# vim: ts=2 sw=2 expandtab

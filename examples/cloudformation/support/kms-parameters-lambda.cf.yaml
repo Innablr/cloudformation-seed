@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Custom Cloudformation resource that decrypts KMS-encrypted strings
+
+Parameters:
+  TemplatesS3Bucket:
+    Type: String
+    Description: S3 Bucket with the components templates
+  InstallationName:
+    Type: String
+    Description: Unique stack installation name
+  RuntimeEnvironment:
+    Type: String
+    Description: The runtime environment config tag
+    Default: dev
+  Route53ZoneDomain:
+    Type: String
+    Description: Route53 zone domain that represents the environment
+  LambdaSourceS3Key:
+    Type: String
+    Description: S3 key with the lambda function source
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: The execution role ARN for the lambda function
+
+Resources:
+  KmsDecryptLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref TemplatesS3Bucket
+        S3Key: !Ref LambdaSourceS3Key
+      Description: Decrypts a value using KMS. Takes EncryptedValue and optionally
+      Handler: index.handler
+      MemorySize: 128
+      Role: !Ref LambdaExecutionRoleArn
+      Runtime: nodejs6.10
+      Timeout: 15
+
+Outputs:
+  KmsDecryptLambdaArn:
+    Value: !GetAtt KmsDecryptLambda.Arn
