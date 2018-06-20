@@ -7,7 +7,6 @@ stacks:
     template: support/kms-parameters-lambda.cf.yaml
     parameters:
       LambdaSourceS3Key: !LambdaZip kmsParameters.zip
-      LambdaExecutionRoleArn: arn:aws:iam::000000000000:role/KMSDecryptLambdaRole
 
   - name: my-project
     template: my-project.cf.yaml

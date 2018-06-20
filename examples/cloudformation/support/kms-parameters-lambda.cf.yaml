@@ -18,11 +18,34 @@ Parameters:
   LambdaSourceS3Key:
     Type: String
     Description: S3 key with the lambda function source
-  LambdaExecutionRoleArn:
-    Type: String
-    Description: The execution role ARN for the lambda function
 
 Resources:
+  KmsDecryptLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaUseKMS
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - !Sub arn:aws:kms:*:${AWS::AccountId}:key/*
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+
   KmsDecryptLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -32,7 +55,7 @@ Resources:
       Description: Decrypts a value using KMS. Takes EncryptedValue and optionally
       Handler: index.handler
       MemorySize: 128
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !GetAtt KmsDecryptLambdaExecutionRole.Arn
       Runtime: nodejs6.10
       Timeout: 15
 
