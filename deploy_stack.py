@@ -62,7 +62,7 @@ class S3RecursiveUploader(DirectoryScanner):
         self.s3_key_prefix = s3_key_prefix
         log.info(f'Scanning files in {path}...')
         self.u = [S3Uploadable(f, self.s3_bucket, f'{self.s3_key_prefix}/{k}')
-                  for k, f in self.scan_directories(path)]
+                for k, f in self.scan_directories(path)]
 
     def upload(self):
         for xu in self.u:
@@ -164,7 +164,7 @@ class CloudformationTemplate(object):
         return self.u.s3_url
 
     def read_template_yaml(self, file_path):
-        log.info(f'Loading template from {file_path}...')
+        log.info(f'Loading template for stack {self.name} from {file_path}...')
         with open(file_path, 'r') as f:
             return yaml.load(f, Loader=IgnoreYamlLoader)
 
@@ -176,15 +176,8 @@ class CloudformationCollection(DirectoryScanner):
     def __init__(self, path, s3_bucket, s3_key_prefix, environment_parameters):
         self.s3_bucket = s3_bucket
         self.environment_parameters = environment_parameters
-        self.templates = [CloudformationTemplate(self.s3_bucket, xk, s3_key_prefix, xp, self.find_parameters_section(xk)) for xk, xp in self.scan_directories(path)]
-
-    def find_parameters_section(self, relative_path):
-        for xs in self.environment_parameters.get('stacks', list()):
-            if xs['template'] == relative_path:
-                return xs
-        return {
-            'template': relative_path
-        }
+        self.template_files = self.scan_directories(path)
+        self.templates = [CloudformationTemplate(self.s3_bucket, xs['template'], s3_key_prefix, self.find_template_file(xs['template']), xs) for xs in self.environment_parameters.get('stacks', list())]
 
     def list_deployable(self):
         u = list()
@@ -202,8 +195,14 @@ class CloudformationCollection(DirectoryScanner):
         except IndexError:
             raise InvalidStackConfiguration(f'Template {template_name} not found')
 
+    def find_template_file(self, template_key):
+        for xk, xp in self.template_files:
+            if xk == template_key:
+                return xp
+        raise InvalidStackConfiguration(f'Template file not found for {template_key}')
+
     def upload(self):
-        for xt in self.templates:
+        for xt in [xt for n, xt in enumerate(self.templates) if xt.template not in [xxt.template for xxt in self.templates[:n]]]:
             xt.upload()
 
 
