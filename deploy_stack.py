@@ -259,6 +259,9 @@ class StackParameters(object):
         self.stack_definition = [xs for xs in self.environment_parameters['stacks'] if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
         self.rollout = self.stack_definition.get('rollout', list())
+        self.pilot_configuration = self.stack_definition.get('pilot', dict())
+        self.pilot_accounts = self.pilot_configuration.get('accounts', list())
+        self.pilot_regions = self.pilot_configuration.get('regions', [s.client('cloudformation').meta.region_name]) if len(self.pilot_accounts) > 0 else list()
 
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader): pass
@@ -534,7 +537,10 @@ class CloudformationStackSet(object):
     def update_stackset(self, caps):
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
-        log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
+        log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url}')
+        log.info(f' => capabilities {caps}')
+        log.info(f' => pilot accounts {self.stack_parameters.pilot_accounts}')
+        log.info(f' => pilot regions {self.stack_parameters.pilot_regions}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
@@ -544,8 +550,8 @@ class CloudformationStackSet(object):
             TemplateURL=self.template.template_url,
             Parameters=p,
             Capabilities=caps,
-            Accounts=[],
-            Regions=[]
+            Accounts=self.stack_parameters.pilot_accounts,
+            Regions=self.stack_parameters.pilot_regions
         )
 
     def retrieve(self):
