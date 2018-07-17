@@ -23,7 +23,7 @@ deploy: build
 	docker run \
 		-v ~/.aws:/root/.aws \
 		$(ENVS) -t --rm \
-		$(IMAGE_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) --cap-iam --cap-named-iam deploy
+		$(IMAGE_NAME) -c $(COMPONENT_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) --cap-iam --cap-named-iam deploy
 
 remove: build
 	if [ -z "${INSTALLATION_NAME}" -o -z "${RUNTIME_ENVIRONMENT}" -o -z "${R53_DOMAIN}" ]; then \
@@ -33,7 +33,7 @@ remove: build
 	docker run \
 		-v ~/.aws:/root/.aws \
 		$(ENVS) -t --rm \
-		$(IMAGE_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) --cap-iam --cap-named-iam teardown
+		$(IMAGE_NAME) -c $(COMPONENT_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) --cap-iam --cap-named-iam teardown
 
 .PHONY: build deploy remove
 

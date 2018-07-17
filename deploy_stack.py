@@ -754,6 +754,7 @@ class StackDeployer(object):
         opts = argparse.ArgumentParser(description='Generates parameters and deploys Cloudformation stacks')
 
         gc = opts.add_argument_group('Configuration')
+        gc.add_argument('-c', '--component-name', default='generic-ops', help='Name of the component being deployed')
         gc.add_argument('-i', '--installation-name', required=True, help='Stack name')
         gc.add_argument('-e', '--runtime-environment', required=True, help='Configuration section name')
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
@@ -820,7 +821,7 @@ class StackDeployer(object):
 
     def set_bucket(self):
         r = s.resource('s3')
-        b = r.Bucket(f'{self.o.installation_name}.{self.o.dns_domain}')
+        b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
         v = r.BucketVersioning(b.name)
         log.info(f'Creating S3 bucket {b.name}...')
         try:
