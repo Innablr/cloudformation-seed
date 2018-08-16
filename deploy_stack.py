@@ -514,10 +514,10 @@ class CloudformationStackSet(object):
         log.info(f'Loading stackset {self.stack_name}...')
         try:
             r = c.describe_stack_set(StackSetName=self.stack_name)
-            log.info(f'StackSet {self.stack_name} found')
+            log.info(f'Stackset {self.stack_name} found')
             return r['StackSet']
         except Exception:
-            log.info(f'StackSet {self.stack_name} does not exist, skipping')
+            log.info(f'Stackset {self.stack_name} does not exist, skipping')
             return None
 
     def get_stack_output(self, output_name):
@@ -526,7 +526,6 @@ class CloudformationStackSet(object):
     def create_stackset(self, caps):
         c = s.client('cloudformation')
         log.info(f'Creating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
-        self.wait_pending_operations()
         c.create_stack_set(
             StackSetName=self.stack_name,
             TemplateURL=self.template.template_url,
@@ -537,14 +536,13 @@ class CloudformationStackSet(object):
     def update_stackset(self, caps):
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
-        log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url}')
+        log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         log.info(f' => capabilities {caps}')
         log.info(f' => pilot accounts {self.stack_parameters.pilot_accounts}')
         log.info(f' => pilot regions {self.stack_parameters.pilot_regions}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
-        self.wait_pending_operations()
         c.update_stack_set(
             StackSetName=self.stack_name,
             TemplateURL=self.template.template_url,
@@ -558,7 +556,7 @@ class CloudformationStackSet(object):
         c = s.client('cloudformation')
         r = c.describe_stack_set(StackSetName=self.stack_name)
         self.stack = r['StackSet']
-        log.info(f'Found stack {self.stack["StackSetName"]} in status {self.stack["Status"]}')
+        log.info(f'Found stackset {self.stack["StackSetName"]} in status {self.stack["Status"]}')
 
     def format_caps(self, cap_iam, cap_named_iam):
         caps = list()
@@ -570,16 +568,19 @@ class CloudformationStackSet(object):
 
     def deploy(self, cap_iam, cap_named_iam):
         caps = self.format_caps(cap_iam, cap_named_iam)
+        self.wait_pending_operations()
         if self.existing_stack is None:
             self.create_stackset(caps)
         else:
             for xa in self.stack_parameters.rollout:
                 self.cleanup_stack_instances(xa)
+                self.wait_pending_operations()
             self.update_stackset(caps)
         self.wait_pending_operations()
         self.retrieve()
         for xa in self.stack_parameters.rollout:
             self.rollout_account(xa)
+            self.wait_pending_operations()
 
     def cleanup_stack_instances(self, account_info):
         c = s.client('cloudformation')
@@ -592,7 +593,6 @@ class CloudformationStackSet(object):
         delete_regions = existing_regions - set(regions)
         if len(delete_regions) > 0:
             log.info(f'Cleaning up stack instances for account {account_info["account"]} in regions {delete_regions}...')
-            self.wait_pending_operations()
             c.delete_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[account_info['account']],
@@ -619,55 +619,55 @@ class CloudformationStackSet(object):
         delete_regions = existing_regions - set(regions)
         if len(delete_regions) > 0:
             log.info(f'Deleting stack instances in regions {delete_regions}...')
-            self.wait_pending_operations()
             c.delete_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[account_info['account']],
                 Regions=list(delete_regions),
                 RetainStacks=False
             )
+            self.wait_pending_operations()
         if len(create_regions) > 0:
             log.info(f'Creating new stack instances in regions {create_regions}...')
-            self.wait_pending_operations()
             c.create_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[account_info['account']],
                 Regions=list(create_regions),
                 ParameterOverrides=overrides
             )
+            self.wait_pending_operations()
         if len(update_regions) > 0:
             log.info(f'Updating stack instances in regions {update_regions}...')
-            self.wait_pending_operations()
             c.update_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[account_info['account']],
                 Regions=list(update_regions),
                 ParameterOverrides=overrides
             )
+            self.wait_pending_operations()
 
     def delete_stack_instances(self):
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
         for xi in i['Summaries']:
             log.info(f'Deleting stack instance in account {xi["Account"]} region {xi["Region"]}...')
-            self.wait_pending_operations()
             c.delete_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[xi['Account']],
                 Regions=[xi['Region']],
                 RetainStacks=False
             )
+            self.wait_pending_operations()
 
     def delete_stackset(self):
         c = s.client('cloudformation')
         log.info(f'Deleting stackset {self.stack_name}...')
-        self.wait_pending_operations()
         c.delete_stack_set(StackSetName=self.stack_name)
 
     def teardown(self):
         if self.existing_stack is None:
             log.info(f'StackSet {self.stack_name} does not exist. Skipping.')
             return
+        self.wait_pending_operations()
         self.delete_stack_instances()
         self.delete_stackset()
 
@@ -682,14 +682,12 @@ class CloudformationStackSet(object):
                     o.extend(r['Summaries'])
                 po = [xo for xo in o if xo['Status'] in ['RUNNING', 'STOPPING']]
                 if len(po) > 0:
-                    log.info(f'{len(po)} operations pending')
+                    log.info(f'{len(po)} operations pending on stackset {self.stack_name}')
                     time.sleep(15)
                     continue
                 return
         except ClientError as e:
-            if e.response['Error']['Code'] == 'StackSetNotFoundException':
-                log.info('No operations pending')
-            else:
+            if e.response['Error']['Code'] != 'StackSetNotFoundException':
                 raise
 
 
