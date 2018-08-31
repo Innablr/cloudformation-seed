@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from typing import Dict, Tuple, List, Any
+
 import yaml
 import boto3
 import hashlib
@@ -391,14 +393,14 @@ class StackParameters(object):
 
 class CloudformationStack(object):
 
-    def __init__(self, installation_name, template):
+    def __init__(self, installation_name: str, template: CloudformationTemplate):
         self.template = template
         self.stack_name = f'{installation_name}-{self.template.name}'
         self.stack_parameters = None
         self.existing_stack = self.find_existing_stack()
         self.stack = None
 
-    def set_parameters(self, parameters):
+    def set_parameters(self, parameters: StackParameters):
         self.stack_parameters = parameters
 
     def find_existing_stack(self):
@@ -412,7 +414,7 @@ class CloudformationStack(object):
             log.info(f'Stack {self.stack_name} does not exist, skipping')
             return None
 
-    def get_stack_output(self, output_name):
+    def get_stack_output(self, output_name: str):
         if self.stack is None:
             log.debug(f'Can\'t find output {self.stack_name}.{output_name}, stack has not been yet deployed')
             return
@@ -421,7 +423,7 @@ class CloudformationStack(object):
                 log.debug(f'Output {self.stack_name}.{output_name} = {xo["OutputValue"]}')
                 return xo['OutputValue']
 
-    def create_stack(self, caps):
+    def create_stack(self, caps: List[str]):
         c = s.client('cloudformation')
         log.info(f'Creating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         c.create_stack(
@@ -434,7 +436,7 @@ class CloudformationStack(object):
         self.wait('stack_create_complete')
         self.retrieve()
 
-    def update_stack(self, caps):
+    def update_stack(self, caps: List[str]):
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
         log.info(f'Updating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
@@ -456,7 +458,7 @@ class CloudformationStack(object):
                 raise
         self.retrieve()
 
-    def format_caps(self, cap_iam, cap_named_iam):
+    def format_caps(self, cap_iam: bool, cap_named_iam: bool) -> List[str]:
         caps = list()
         if cap_iam:
             caps.append('CAPABILITY_IAM')
@@ -464,7 +466,7 @@ class CloudformationStack(object):
             caps.append('CAPABILITY_NAMED_IAM')
         return caps
 
-    def deploy(self, cap_iam, cap_named_iam):
+    def deploy(self, cap_iam: bool, cap_named_iam: bool):
         caps = self.format_caps(cap_iam, cap_named_iam)
         if self.existing_stack is None:
             self.create_stack(caps)
@@ -480,7 +482,7 @@ class CloudformationStack(object):
         c.delete_stack(StackName=self.stack_name)
         self.wait('stack_delete_complete')
 
-    def wait(self, event):
+    def wait(self, event: str):
         log.info('Waiting for operation to finish...')
         c = s.client('cloudformation')
         waiter = c.get_waiter(event)
@@ -499,14 +501,14 @@ class CloudformationStack(object):
 
 
 class CloudformationStackSet(object):
-    def __init__(self, installation_name, template):
+    def __init__(self, installation_name: str, template: CloudformationTemplate):
         self.template = template
         self.stack_name = f'{installation_name}-{self.template.name}'
         self.stack_parameters = None
         self.existing_stack = self.find_existing_stackset()
         self.stack = None
 
-    def set_parameters(self, parameters):
+    def set_parameters(self, parameters: StackParameters):
         self.stack_parameters = parameters
 
     def find_existing_stackset(self):
@@ -520,10 +522,10 @@ class CloudformationStackSet(object):
             log.info(f'Stackset {self.stack_name} does not exist, skipping')
             return None
 
-    def get_stack_output(self, output_name):
+    def get_stack_output(self, output_name: str):
         raise InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}, stacksets don\'t have outputs. Please review your configuration')
 
-    def create_stackset(self, caps):
+    def create_stackset(self, caps: List[str]):
         c = s.client('cloudformation')
         log.info(f'Creating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         c.create_stack_set(
@@ -533,7 +535,7 @@ class CloudformationStackSet(object):
             Capabilities=caps
         )
 
-    def update_stackset(self, caps):
+    def update_stackset(self, caps: List[str]):
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
         log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
@@ -558,7 +560,7 @@ class CloudformationStackSet(object):
         self.stack = r['StackSet']
         log.info(f'Found stackset {self.stack["StackSetName"]} in status {self.stack["Status"]}')
 
-    def format_caps(self, cap_iam, cap_named_iam):
+    def format_caps(self, cap_iam: bool, cap_named_iam: bool) -> List[str]:
         caps = list()
         if cap_iam:
             caps.append('CAPABILITY_IAM')
@@ -566,13 +568,14 @@ class CloudformationStackSet(object):
             caps.append('CAPABILITY_NAMED_IAM')
         return caps
 
-    def deploy(self, cap_iam, cap_named_iam):
+    def deploy(self, cap_iam: bool, cap_named_iam: bool):
         caps = self.format_caps(cap_iam, cap_named_iam)
         self.wait_pending_operations()
         if self.existing_stack is None:
             self.create_stackset(caps)
         else:
             for xa in self.stack_parameters.rollout:
+                log.info(f'Cleanup account {xa["account"]}...')
                 self.cleanup_stack_instances(xa)
                 self.wait_pending_operations()
             self.update_stackset(caps)
@@ -582,7 +585,7 @@ class CloudformationStackSet(object):
             self.rollout_account(xa)
             self.wait_pending_operations()
 
-    def cleanup_stack_instances(self, account_info):
+    def cleanup_stack_instances(self, account_info: Dict[str, Any]):
         c = s.client('cloudformation')
         regions = account_info.get('regions', [c.meta.region_name])
         i = c.list_stack_instances(
@@ -600,7 +603,7 @@ class CloudformationStackSet(object):
                 RetainStacks=False
             )
 
-    def rollout_account(self, account_info):
+    def rollout_account(self, account_info: Dict[str, Any]):
         c = s.client('cloudformation')
         log.info(f'Rolling out stackset {self.stack_name} to account {account_info["account"]}...')
         overrides = self.stack_parameters.format_stackset_overrides(account_info['account'])
@@ -675,15 +678,10 @@ class CloudformationStackSet(object):
         c = s.client('cloudformation')
         try:
             while True:
-                r = c.list_stack_set_operations(StackSetName=self.stack_name)
-                o = r['Summaries']
-                while r.get('NextToken'):
-                    r = c.list_stack_set_operations(StackSetName=self.stack_name, NextToken=r['NextToken'])
-                    o.extend(r['Summaries'])
-                po = [xo for xo in o if xo['Status'] in ['RUNNING', 'STOPPING']]
-                if len(po) > 0:
-                    log.info(f'{len(po)} operations pending on stackset {self.stack_name}')
-                    time.sleep(15)
+                r = c.list_stack_set_operations(StackSetName=self.stack_name, MaxResults=10)
+                if len([xo for xo in r['Summaries'] if xo['Status'] in ['RUNNING', 'STOPPING']]) > 0:
+                    log.info(f'There\'s operations pending on stackset {self.stack_name}')
+                    time.sleep(10)
                     continue
                 return
         except ClientError as e:
@@ -742,6 +740,7 @@ class CloudformationEnvironment(object):
             p.parse_parameters()
             xs.set_parameters(p)
             xs.deploy(self.cap_iam, self.cap_named_iam)
+            log.info(f' {xs.stack_name} completed '.center(64, '-'))
 
     def teardown_stacks(self):
         for xs in reversed(self.stacks):
