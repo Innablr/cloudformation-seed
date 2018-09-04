@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict, Tuple, List, Any
+from typing import Dict, List, Tuple, Any, Optional, NoReturn
 
 import yaml
 import boto3
@@ -16,20 +16,23 @@ from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
 
+
 class IgnoreYamlLoader(yaml.Loader):
     pass
+
 
 IgnoreYamlLoader.add_constructor(None, lambda l, n: n)
 
 s = boto3.Session()
 
-class InvalidStackConfiguration(Exception): pass
-class DeploymentFailed(Exception): pass
-class StackTemplateInvalid(Exception): pass
+
+class InvalidStackConfiguration(Exception): pass    # noqa E701,E302
+class DeploymentFailed(Exception): pass             # noqa E701,E302
+class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
 class DirectoryScanner(object):
-    def scan_directories(self, path):
+    def scan_directories(self, path: str) -> List[Tuple[str, str]]:
         u = list()
         for root, _, files in os.walk(path):
             relative_root = root.replace(path, '').strip(os.sep)
@@ -38,18 +41,18 @@ class DirectoryScanner(object):
 
 
 class S3Uploadable(object):
-    def __init__(self, file_path, s3_bucket, s3_key):
-        self.file_path = file_path
-        self.s3_bucket = s3_bucket
-        self.s3_key = s3_key
-        self.bytes = 0
-        self.total_bytes = os.path.getsize(self.file_path)
+    def __init__(self, file_path: str, s3_bucket: Any, s3_key: str) -> None:
+        self.file_path: str = file_path
+        self.s3_bucket: Any = s3_bucket
+        self.s3_key: str = s3_key
+        self.bytes: int = 0
+        self.total_bytes: int = os.path.getsize(self.file_path)
 
-    def print_progress(self, current_bytes):
+    def print_progress(self, current_bytes: int) -> None:
         self.bytes += current_bytes
         log.debug(f'{self.bytes} bytes out of {self.total_bytes} complete')
 
-    def upload(self):
+    def upload(self) -> None:
         log.info(f'Uploading {self.file_path} into {self.s3_url}')
         self.s3_bucket.upload_file(self.file_path, self.s3_key, Callback=self.print_progress)
 
@@ -59,31 +62,31 @@ class S3Uploadable(object):
 
 
 class S3RecursiveUploader(DirectoryScanner):
-    def __init__(self, path, s3_bucket, s3_key_prefix):
-        self.s3_bucket = s3_bucket
-        self.s3_key_prefix = s3_key_prefix
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
+        self.s3_bucket: Any = s3_bucket
+        self.s3_key_prefix: str = s3_key_prefix
         log.info(f'Scanning files in {path}...')
         self.u = [S3Uploadable(f, self.s3_bucket, f'{self.s3_key_prefix}/{k}')
-                for k, f in self.scan_directories(path)]
+            for k, f in self.scan_directories(path)]
 
-    def upload(self):
+    def upload(self) -> None:
         for xu in self.u:
             xu.upload()
 
 
 class LambdaFunction(object):
-    def __init__(self, path, s3_bucket, s3_key_prefix):
-        self.path = path
-        self.s3_bucket = s3_bucket
-        self.s3_key_prefix = s3_key_prefix
-        self.zip_file = None
-        self.u = None
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str):
+        self.path: str = path
+        self.s3_bucket: str = s3_bucket
+        self.s3_key_prefix: str = s3_key_prefix
+        self.zip_file: Optional[str] = None
+        self.u: Optional[S3Uploadable] = None
 
     @property
-    def s3_key(self):
+    def s3_key(self) -> str:
         return self.u.s3_key
 
-    def find_lambda_zipfile(self):
+    def find_lambda_zipfile(self) -> str:
         log.debug(f'Looking for zipfile in {self.path}')
         for xf in os.listdir(self.path):
             if xf.endswith('.zip'):
@@ -92,45 +95,46 @@ class LambdaFunction(object):
             log.debug(f'{xf} is not a zip file')
         raise InvalidStackConfiguration(f'Lambda function source at {self.path} must produce a zipfile')
 
-    def build_bucket_key(self):
+    def build_bucket_key(self) -> str:
         sha1sum = hashlib.sha1()
         with zipfile.ZipFile(os.path.join(self.path, self.zip_file), 'r') as f:
             for xc in sorted([xf.CRC for xf in f.filelist]):
                 sha1sum.update(xc.to_bytes((xc.bit_length() + 7) // 8, 'big') or b'\0')
         return f'{self.s3_key_prefix}/{sha1sum.hexdigest()}-{self.zip_file}'
 
-    def prepare(self):
+    def prepare(self) -> None:
         log.info(f'Running make in {self.path}...')
         subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.zip_file = self.find_lambda_zipfile()
         self.u = S3Uploadable(os.path.join(self.path, self.zip_file), self.s3_bucket, self.build_bucket_key())
 
-    def upload(self):
+    def upload(self) -> None:
         self.u.upload()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         log.info(f'Running make clean in {self.path}...')
         subprocess.run(['make', 'clean'], cwd=self.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class LambdaCollection(object):
-    def __init__(self, path, s3_bucket, s3_key_prefix):
-        self.s3_bucket = s3_bucket
-        self.lambdas = [LambdaFunction(os.path.join(path, x), self.s3_bucket, s3_key_prefix) for x in os.listdir(path) if os.access(os.path.join(path, x, 'Makefile'), os.R_OK)]
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str):
+        self.s3_bucket: Any = s3_bucket
+        self.lambdas: List[LambdaFunction] = [LambdaFunction(os.path.join(path, x), self.s3_bucket, s3_key_prefix)
+                        for x in os.listdir(path) if os.access(os.path.join(path, x, 'Makefile'), os.R_OK)]
 
-    def prepare(self):
+    def prepare(self) -> None:
         for x in self.lambdas:
             x.prepare()
 
-    def upload(self):
+    def upload(self) -> None:
         for x in self.lambdas:
             x.upload()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for x in self.lambdas:
             x.cleanup()
 
-    def find_lambda_key(self, zip_name):
+    def find_lambda_key(self, zip_name) -> str:
         try:
             return [x.s3_key for x in self.lambdas if x.zip_file == zip_name].pop()
         except IndexError:
@@ -138,50 +142,59 @@ class LambdaCollection(object):
 
 
 class CloudformationTemplate(object):
-    def __init__(self, s3_bucket, s3_key, s3_key_prefix, file_path, template_parameters):
-        self.s3_key_prefix = s3_key_prefix
-        self.s3_key = s3_key
-        self.template_parameters = template_parameters
-        self.template_body = self.read_template_yaml(file_path)
-        self.u = S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
+    def __init__(self, s3_bucket: Any, s3_key: str, s3_key_prefix: str,
+                    file_path: str, template_parameters: Dict[str, Any]) -> None:
+        self.s3_key_prefix: str = s3_key_prefix
+        self.s3_key: str = s3_key
+        self.template_parameters: Dict[str, Any] = template_parameters
+        self.template_body: Dict['str', Any] = self.read_template_yaml(file_path)
+        self.u: S3Uploadable = S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
 
     @property
-    def name(self):
-        return self.template_parameters.get('name')
+    def name(self) -> str:
+        return self.template_parameters['name']
 
     @property
-    def template(self):
-        return self.template_parameters.get('template')
+    def template(self) -> str:
+        return self.template_parameters['template']
 
     @property
-    def template_type(self):
+    def template_type(self) -> str:
         return self.template_parameters.get('type', 'stack')
 
     @property
-    def template_key(self):
+    def template_key(self) -> str:
         return self.u.s3_key
 
     @property
-    def template_url(self):
+    def template_url(self) -> str:
         return self.u.s3_url
 
-    def read_template_yaml(self, file_path):
+    def read_template_yaml(self, file_path: str) -> Dict['str', Any]:
         log.info(f'Loading template for stack {self.name} from {file_path}...')
         with open(file_path, 'r') as f:
             return yaml.load(f, Loader=IgnoreYamlLoader)
 
-    def upload(self):
+    def upload(self) -> None:
         self.u.upload()
 
 
 class CloudformationCollection(DirectoryScanner):
-    def __init__(self, path, s3_bucket, s3_key_prefix, environment_parameters):
-        self.s3_bucket = s3_bucket
-        self.environment_parameters = environment_parameters
-        self.template_files = self.scan_directories(path)
-        self.templates = [CloudformationTemplate(self.s3_bucket, xs['template'], s3_key_prefix, self.find_template_file(xs['template']), xs) for xs in self.environment_parameters.get('stacks', list())]
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str,
+                    environment_parameters: Dict['str', Any]) -> None:
+        self.s3_bucket: Any = s3_bucket
+        self.environment_parameters: Dict['str', Any] = environment_parameters
+        self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
+        self.templates: List[CloudformationTemplate] = [
+            CloudformationTemplate(
+                self.s3_bucket,
+                xs['template'],
+                s3_key_prefix,
+                self.find_template_file(xs['template']), xs
+            ) for xs in self.environment_parameters.get('stacks', list())
+        ]
 
-    def list_deployable(self):
+    def list_deployable(self) -> List[CloudformationTemplate]:
         u = list()
         for xs in self.environment_parameters.get('stacks', list()):
             try:
@@ -191,41 +204,42 @@ class CloudformationCollection(DirectoryScanner):
                 raise InvalidStackConfiguration(f'Template not found for {xs.get("name")}')
         return u
 
-    def find_template_key(self, template_name):
+    def find_template_key(self, template_name: str) -> str:
         try:
             return [x.template_key for x in self.templates if x.template == template_name].pop()
         except IndexError:
             raise InvalidStackConfiguration(f'Template {template_name} not found')
 
-    def find_template_file(self, template_key):
+    def find_template_file(self, template_key: str) -> str:
         for xk, xp in self.template_files:
             if xk == template_key:
                 return xp
         raise InvalidStackConfiguration(f'Template file not found for {template_key}')
 
-    def upload(self):
-        for xt in [xt for n, xt in enumerate(self.templates) if xt.template not in [xxt.template for xxt in self.templates[:n]]]:
+    def upload(self) -> None:
+        for xt in [xt for n, xt in enumerate(self.templates)
+                        if xt.template not in [xxt.template for xxt in self.templates[:n]]]:
             xt.upload()
 
 
 class VersionManifest(object):
-    def __init__(self, s3_bucket, s3_key):
-        self.manifest = self.load_manifest(s3_bucket, s3_key)
+    def __init__(self, s3_bucket: Any, s3_key: str) -> None:
+        self.manifest: Dict[str, Any] = self.load_manifest(s3_bucket, s3_key)
 
-    def load_manifest(self, s3_bucket, s3_key):
+    def load_manifest(self, s3_bucket: Any, s3_key: str) -> Dict[str, Any]:
         if s3_key is None:
             log.info('No version manifest supplied, artifact tags are not supported for this deployment')
             return self.default_manifest()
         log.info(f'Loading version manifest from s3://{s3_bucket.name}/{s3_key}')
-        o = s3_bucket.Object(s3_key)
-        r = o.get()
-        m = yaml.load(r['Body'])
+        o: boto3.Object = s3_bucket.Object(s3_key)
+        r: Dict[str, Any] = o.get()
+        m: Dict[str, Any] = yaml.load(r['Body'])
         log.info(f'Loaded version manifest for release {m["release"]["release_version"]} (S3 version: {o.version_id})')
         log.debug('Version Manifest'.center(64, '-'))
         log.debug(m)
         return m
 
-    def default_manifest(self):
+    def default_manifest(self) -> Dict[str, Any]:
         return {
             'release': {
                 'release_version': 0,
@@ -233,7 +247,7 @@ class VersionManifest(object):
             }
         }
 
-    def get_artifact_by_name(self, name):
+    def get_artifact_by_name(self, name: str) -> Dict[str, Any]:
         for xa in self.manifest['release'].get('artifacts', list()):
             if xa['name'] == name:
                 return xa
@@ -256,17 +270,25 @@ class StackParameters(object):
 
         self.parameters_loader = self.configure_parameters_loader()
 
-        self.environment_parameters = self.read_parameters_yaml(os.path.join(self.parameters_dir, f'{self.runtime_environment}.yaml')) or dict()
+        self.environment_parameters = self.read_parameters_yaml(
+                                            os.path.join(self.parameters_dir,
+                                            f'{self.runtime_environment}.yaml')
+                                        ) or dict()
         self.common_parameters = self.environment_parameters.get('common-parameters', dict())
-        self.stack_definition = [xs for xs in self.environment_parameters['stacks'] if xs['name'] == self.template.name].pop()
+        self.stack_definition = [xs for xs in self.environment_parameters['stacks']
+                                    if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
         self.rollout = self.stack_definition.get('rollout', list())
         self.pilot_configuration = self.stack_definition.get('pilot', dict())
         self.pilot_accounts = self.pilot_configuration.get('accounts', list())
-        self.pilot_regions = self.pilot_configuration.get('regions', [s.client('cloudformation').meta.region_name]) if len(self.pilot_accounts) > 0 else list()
+        self.pilot_regions = self.pilot_configuration.get(
+                                'regions',
+                                [s.client('cloudformation').meta.region_name]
+                            ) if len(self.pilot_accounts) > 0 else list()
 
     def configure_parameters_loader(self):
-        class ParametersLoader(yaml.Loader): pass
+        class ParametersLoader(yaml.Loader):
+            pass
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
         ParametersLoader.add_constructor('!CloudformationTemplate', self.set_cloudformation_template)
         ParametersLoader.add_constructor('!StackOutput', self.set_stack_output)
@@ -285,14 +307,14 @@ class StackParameters(object):
     def set_cloudformation_template(self, loader, node):
         template_name = loader.construct_scalar(node)
         log.debug(f'Looking up Cloudformation template {template_name}...')
-        val =  self.environment.templates.find_template_key(template_name)
+        val = self.environment.templates.find_template_key(template_name)
         log.debug(f'Found template {val}...')
         return val
 
     def set_stack_output(self, loader, node):
         output_id = loader.construct_scalar(node)
         log.debug(f'Looking up stack output {output_id}...')
-        val =  self.environment.find_stack_output(output_id)
+        val = self.environment.find_stack_output(output_id)
         log.debug(f'Found stack output {val}...')
         return val
 
@@ -386,24 +408,25 @@ class StackParameters(object):
         for xa in self.rollout:
             if xa['account'] == account_id:
                 if 'override' in xa:
-                    return [{'ParameterKey': k, 'ParameterValue': str(v)} for k, v in xa['override'].items() if v is not None]
+                    return [{'ParameterKey': k, 'ParameterValue': str(v)}
+                                for k, v in xa['override'].items() if v is not None]
                 return []
         raise RuntimeError(f'Stackset is not rolling out to account {account_id}')
 
 
 class CloudformationStack(object):
 
-    def __init__(self, installation_name: str, template: CloudformationTemplate):
-        self.template = template
-        self.stack_name = f'{installation_name}-{self.template.name}'
-        self.stack_parameters = None
+    def __init__(self, installation_name: str, template: CloudformationTemplate) -> None:
+        self.template: CloudformationTemplate = template
+        self.stack_name: str = f'{installation_name}-{self.template.name}'
+        self.stack_parameters: Optional[StackParameters] = None
         self.existing_stack = self.find_existing_stack()
         self.stack = None
 
-    def set_parameters(self, parameters: StackParameters):
+    def set_parameters(self, parameters: StackParameters) -> None:
         self.stack_parameters = parameters
 
-    def find_existing_stack(self):
+    def find_existing_stack(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
         log.info(f'Loading stack {self.stack_name}...')
         try:
@@ -414,16 +437,16 @@ class CloudformationStack(object):
             log.info(f'Stack {self.stack_name} does not exist, skipping')
             return None
 
-    def get_stack_output(self, output_name: str):
+    def get_stack_output(self, output_name: str) -> Optional[str]:
         if self.stack is None:
             log.debug(f'Can\'t find output {self.stack_name}.{output_name}, stack has not been yet deployed')
-            return
+            return None
         for xo in self.stack.outputs:
             if xo['OutputKey'] == output_name:
                 log.debug(f'Output {self.stack_name}.{output_name} = {xo["OutputValue"]}')
                 return xo['OutputValue']
 
-    def create_stack(self, caps: List[str]):
+    def create_stack(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
         log.info(f'Creating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         c.create_stack(
@@ -436,7 +459,7 @@ class CloudformationStack(object):
         self.wait('stack_create_complete')
         self.retrieve()
 
-    def update_stack(self, caps: List[str]):
+    def update_stack(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
         log.info(f'Updating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
@@ -466,14 +489,14 @@ class CloudformationStack(object):
             caps.append('CAPABILITY_NAMED_IAM')
         return caps
 
-    def deploy(self, cap_iam: bool, cap_named_iam: bool):
+    def deploy(self, cap_iam: bool, cap_named_iam: bool) -> None:
         caps = self.format_caps(cap_iam, cap_named_iam)
         if self.existing_stack is None:
             self.create_stack(caps)
         else:
             self.update_stack(caps)
 
-    def teardown(self):
+    def teardown(self) -> None:
         if self.existing_stack is None:
             log.info(f'Stack {self.stack_name} does not exist. Skipping.')
             return
@@ -482,7 +505,7 @@ class CloudformationStack(object):
         c.delete_stack(StackName=self.stack_name)
         self.wait('stack_delete_complete')
 
-    def wait(self, event: str):
+    def wait(self, event: str) -> None:
         log.info('Waiting for operation to finish...')
         c = s.client('cloudformation')
         waiter = c.get_waiter(event)
@@ -494,24 +517,24 @@ class CloudformationStack(object):
             log.error(f'Operation failed: {self.stack.stack_status_reason}')
             raise DeploymentFailed(self.stack.stack_status_reason)
 
-    def retrieve(self):
+    def retrieve(self) -> None:
         r = s.resource('cloudformation')
         self.stack = r.Stack(self.stack_name)
         log.info(f'Found stack {self.stack.stack_name} in status {self.stack.stack_status}')
 
 
 class CloudformationStackSet(object):
-    def __init__(self, installation_name: str, template: CloudformationTemplate):
-        self.template = template
-        self.stack_name = f'{installation_name}-{self.template.name}'
-        self.stack_parameters = None
-        self.existing_stack = self.find_existing_stackset()
+    def __init__(self, installation_name: str, template: CloudformationTemplate) -> None:
+        self.template: CloudformationTemplate = template
+        self.stack_name: str = f'{installation_name}-{self.template.name}'
+        self.stack_parameters: Optional[StackParameters] = None
+        self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
         self.stack = None
 
-    def set_parameters(self, parameters: StackParameters):
+    def set_parameters(self, parameters: StackParameters) -> None:
         self.stack_parameters = parameters
 
-    def find_existing_stackset(self):
+    def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
         log.info(f'Loading stackset {self.stack_name}...')
         try:
@@ -522,10 +545,11 @@ class CloudformationStackSet(object):
             log.info(f'Stackset {self.stack_name} does not exist, skipping')
             return None
 
-    def get_stack_output(self, output_name: str):
-        raise InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}, stacksets don\'t have outputs. Please review your configuration')
+    def get_stack_output(self, output_name: str) -> NoReturn:
+        raise InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}'
+                                        f', stacksets don\'t have outputs. Please review your configuration')
 
-    def create_stackset(self, caps: List[str]):
+    def create_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
         log.info(f'Creating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         c.create_stack_set(
@@ -535,7 +559,7 @@ class CloudformationStackSet(object):
             Capabilities=caps
         )
 
-    def update_stackset(self, caps: List[str]):
+    def update_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters_update(self.existing_stack)
         log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
@@ -554,7 +578,7 @@ class CloudformationStackSet(object):
             Regions=self.stack_parameters.pilot_regions
         )
 
-    def retrieve(self):
+    def retrieve(self) -> None:
         c = s.client('cloudformation')
         r = c.describe_stack_set(StackSetName=self.stack_name)
         self.stack = r['StackSet']
@@ -568,7 +592,7 @@ class CloudformationStackSet(object):
             caps.append('CAPABILITY_NAMED_IAM')
         return caps
 
-    def deploy(self, cap_iam: bool, cap_named_iam: bool):
+    def deploy(self, cap_iam: bool, cap_named_iam: bool) -> None:
         caps = self.format_caps(cap_iam, cap_named_iam)
         self.wait_pending_operations()
         if self.existing_stack is None:
@@ -585,7 +609,7 @@ class CloudformationStackSet(object):
             self.rollout_account(xa)
             self.wait_pending_operations()
 
-    def cleanup_stack_instances(self, account_info: Dict[str, Any]):
+    def cleanup_stack_instances(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
         regions = account_info.get('regions', [c.meta.region_name])
         i = c.list_stack_instances(
@@ -595,7 +619,8 @@ class CloudformationStackSet(object):
         existing_regions = {xi['Region'] for xi in i['Summaries']}
         delete_regions = existing_regions - set(regions)
         if len(delete_regions) > 0:
-            log.info(f'Cleaning up stack instances for account {account_info["account"]} in regions {delete_regions}...')
+            log.info(f'Cleaning up stack instances for account {account_info["account"]} '
+                        f'in regions {delete_regions}...')
             c.delete_stack_instances(
                 StackSetName=self.stack_name,
                 Accounts=[account_info['account']],
@@ -603,7 +628,7 @@ class CloudformationStackSet(object):
                 RetainStacks=False
             )
 
-    def rollout_account(self, account_info: Dict[str, Any]):
+    def rollout_account(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
         log.info(f'Rolling out stackset {self.stack_name} to account {account_info["account"]}...')
         overrides = self.stack_parameters.format_stackset_overrides(account_info['account'])
@@ -648,7 +673,7 @@ class CloudformationStackSet(object):
             )
             self.wait_pending_operations()
 
-    def delete_stack_instances(self):
+    def delete_stack_instances(self) -> None:
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
         for xi in i['Summaries']:
@@ -661,12 +686,12 @@ class CloudformationStackSet(object):
             )
             self.wait_pending_operations()
 
-    def delete_stackset(self):
+    def delete_stackset(self) -> None:
         c = s.client('cloudformation')
         log.info(f'Deleting stackset {self.stack_name}...')
         c.delete_stack_set(StackSetName=self.stack_name)
 
-    def teardown(self):
+    def teardown(self) -> None:
         if self.existing_stack is None:
             log.info(f'StackSet {self.stack_name} does not exist. Skipping.')
             return
@@ -674,7 +699,7 @@ class CloudformationStackSet(object):
         self.delete_stack_instances()
         self.delete_stackset()
 
-    def wait_pending_operations(self):
+    def wait_pending_operations(self) -> None:
         c = s.client('cloudformation')
         try:
             while True:
@@ -725,7 +750,8 @@ class CloudformationEnvironment(object):
         try:
             return [xs.get_stack_output(output_name) for xs in self.stacks if xs.template.name == stack_name].pop()
         except IndexError:
-            raise InvalidStackConfiguration(f'Can\'t find output {output_id}, template {stack_name} is not part of the deployment')
+            raise InvalidStackConfiguration(f'Can\'t find output {output_id}, '
+                        f'template {stack_name} is not part of the deployment')
 
     def find_template(self, template_name):
         try:
@@ -745,6 +771,7 @@ class CloudformationEnvironment(object):
     def teardown_stacks(self):
         for xs in reversed(self.stacks):
             xs.teardown()
+
 
 class StackDeployer(object):
     def configure_args(self):
@@ -822,7 +849,7 @@ class StackDeployer(object):
         v = r.BucketVersioning(b.name)
         log.info(f'Creating S3 bucket {b.name}...')
         try:
-            b.create(ACL='private', CreateBucketConfiguration={'LocationConstraint':s.region_name})
+            b.create(ACL='private', CreateBucketConfiguration={'LocationConstraint': s.region_name})
             v.enable()
         except ClientError as e:
             if e.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
@@ -846,11 +873,13 @@ class StackDeployer(object):
         m = VersionManifest(self.bucket, self.o.manifest)
 
         log.info(' Upload Application configuration '.center(64, '-'))
-        c = S3RecursiveUploader(os.path.join(self.o.appconfig_dir, self.o.runtime_environment), self.bucket, self.o.appconfig_prefix)
+        c = S3RecursiveUploader(os.path.join(self.o.appconfig_dir, self.o.runtime_environment),
+                self.bucket, self.o.appconfig_prefix)
         c.upload()
 
         log.info(' Collect and upload Cloudformation templates '.center(64, '-'))
-        t = CloudformationCollection(self.o.templates_dir, self.bucket, self.o.templates_prefix, self.environment_parameters)
+        t = CloudformationCollection(self.o.templates_dir, self.bucket,
+                self.o.templates_prefix, self.environment_parameters)
         t.upload()
 
         log.info(' Initialise Cloudformation environment '.center(64, '-'))
@@ -861,7 +890,8 @@ class StackDeployer(object):
 
     def teardown_environment(self):
         log.info(' Collect Cloudformation templates '.center(64, '-'))
-        t = CloudformationCollection(self.o.templates_dir, self.bucket, self.o.templates_prefix, self.environment_parameters)
+        t = CloudformationCollection(self.o.templates_dir, self.bucket,
+                self.o.templates_prefix, self.environment_parameters)
 
         log.info(' Initialise Cloudformation environment '.center(64, '-'))
         e = CloudformationEnvironment(self.bucket, None, t, None, self.o)
