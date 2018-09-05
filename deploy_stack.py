@@ -278,6 +278,8 @@ class StackParameters(object):
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
+        self.stackset_admin_role_arn: Optional[str] = self.stack_definition.get('admin_role_arn')
+        self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
         self.rollout = self.stack_definition.get('rollout', list())
         self.pilot_configuration = self.stack_definition.get('pilot', dict())
         self.pilot_accounts = self.pilot_configuration.get('accounts', list())
@@ -341,6 +343,17 @@ class StackParameters(object):
         val = f'{artifact["artifactory_host"]}/{artifact_name}:{artifact["version"]}'
         log.debug(f'Found image name {val} for artifact {artifact_name}...')
         return val
+
+    def format_role_pair(self) -> Dict[str, str]:
+        if self.stackset_admin_role_arn and self.stackset_exec_role_name:
+            return {
+                'AdministrationRoleARN': self.stackset_admin_role_arn,
+                'ExecutionRoleName': self.stackset_exec_role_name
+            }
+        if self.stackset_admin_role_arn or self.stackset_exec_role_name:
+            raise InvalidStackConfiguration('Either specify both admin_role_arn and exec_role_name or none of them.'
+                                            ' Only one will not work')
+        return dict()
 
     def read_parameters_yaml(self, filename):
         with open(filename, 'r') as f:
@@ -551,13 +564,15 @@ class CloudformationStackSet(object):
 
     def create_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
+        params: Dict[str, Any] = {
+            'StackSetName': self.stack_name,
+            'TemplateURL': self.template.template_url,
+            'Parameters': self.stack_parameters.format_parameters_create(),
+            'Capabilities': caps
+        }
+        params.update(self.stack_parameters.format_role_pair())
         log.info(f'Creating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
-        c.create_stack_set(
-            StackSetName=self.stack_name,
-            TemplateURL=self.template.template_url,
-            Parameters=self.stack_parameters.format_parameters_create(),
-            Capabilities=caps
-        )
+        c.create_stack_set(**params)
 
     def update_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
@@ -863,7 +878,7 @@ class StackDeployer(object):
 
     def deploy_environment(self):
         log.info(' Upload lambda code '.center(64, '-'))
-        l = LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)
+        l = LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)  # noqa E741
         l.prepare()
         l.upload()
         if self.o.cleanup_lambda:
