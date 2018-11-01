@@ -41,18 +41,48 @@ class DirectoryScanner(object):
 
 
 class S3Uploadable(object):
-    def __init__(self, file_path: str, s3_bucket: Any, s3_key: str) -> None:
+    def __init__(self, file_path: str, s3_bucket: Any, s3_key: str, object_checksum: Optional[str] = None) -> None:
         self.file_path: str = file_path
+        self.file_checksum: str = object_checksum or self.calculate_md5(self.file_path)
         self.s3_bucket: Any = s3_bucket
         self.s3_key: str = s3_key
         self.bytes: int = 0
         self.total_bytes: int = os.path.getsize(self.file_path)
 
+    def calculate_md5(self, file_path: str) -> str:
+        md5sum = hashlib.md5()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65535), b''):
+                md5sum.update(chunk)
+        return md5sum.hexdigest()
+
     def print_progress(self, current_bytes: int) -> None:
         self.bytes += current_bytes
         log.debug(f'{self.bytes} bytes out of {self.total_bytes} complete')
 
+    def verify_existing_checksum(self) -> bool:
+        etag: str = ''
+        object_key: str = ''
+        o = self.s3_bucket.Object(self.s3_key)
+        try:
+            etag = o.e_tag.strip('"')
+            object_key = o.key
+        except ClientError:
+            log.info(f'{self.s3_key} doesn\'t seem to exist in the bucket')
+            return False
+        if self.file_checksum in object_key:
+            log.info(f'Object name {self.s3_key} contains checksum {self.file_checksum}')
+            return True
+        if etag == self.file_checksum:
+            log.info(f'{self.s3_key} etag matches file md5sum: {self.file_checksum}')
+            return True
+        log.info(f'Checksum {self.file_checksum} doesn\'t match object {object_key} etag {etag}')
+        return False
+
     def upload(self) -> None:
+        if self.verify_existing_checksum():
+            log.info(f'Object in S3 is identical to {self.file_path}, skipping upload')
+            return
         log.info(f'Uploading {self.file_path} into {self.s3_url}')
         self.s3_bucket.upload_file(self.file_path, self.s3_key, Callback=self.print_progress)
 
@@ -75,11 +105,12 @@ class S3RecursiveUploader(DirectoryScanner):
 
 
 class LambdaFunction(object):
-    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str):
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
         self.path: str = path
         self.s3_bucket: str = s3_bucket
         self.s3_key_prefix: str = s3_key_prefix
         self.zip_file: Optional[str] = None
+        self.zip_checksum: Optional[str] = None
         self.u: Optional[S3Uploadable] = None
 
     @property
@@ -95,18 +126,32 @@ class LambdaFunction(object):
             log.debug(f'{xf} is not a zip file')
         raise InvalidStackConfiguration(f'Lambda function source at {self.path} must produce a zipfile')
 
-    def build_bucket_key(self) -> str:
+    def checksum_zipfile(self) -> str:
         sha1sum = hashlib.sha1()
         with zipfile.ZipFile(os.path.join(self.path, self.zip_file), 'r') as f:
             for xc in sorted([xf.CRC for xf in f.filelist]):
                 sha1sum.update(xc.to_bytes((xc.bit_length() + 7) // 8, 'big') or b'\0')
-        return f'{self.s3_key_prefix}/{sha1sum.hexdigest()}-{self.zip_file}'
+        return sha1sum.hexdigest()
 
     def prepare(self) -> None:
         log.info(f'Running make in {self.path}...')
-        subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            m = subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
+            log.debug('Make output will follow:')
+            log.debug('-' * 64)
+            log.debug(m.stdout)
+            log.debug('-' * 64)
+        except subprocess.CalledProcessError:
+            log.error(f'Make failed in {self.path}, make output will follow:')
+            log.error('-' * 64)
+            log.error(m.stdout)
+            log.error('-' * 64)
+            log.error('Aborting deployment')
+            raise DeploymentFailed(f'Make failed in {self.path}')
         self.zip_file = self.find_lambda_zipfile()
-        self.u = S3Uploadable(os.path.join(self.path, self.zip_file), self.s3_bucket, self.build_bucket_key())
+        self.zip_checksum = self.checksum_zipfile()
+        self.u = S3Uploadable(os.path.join(self.path, self.zip_file), self.s3_bucket,
+            f'{self.s3_key_prefix}/{self.zip_checksum}-{self.zip_file}', self.zip_checksum)
 
     def upload(self) -> None:
         self.u.upload()
@@ -117,7 +162,7 @@ class LambdaFunction(object):
 
 
 class LambdaCollection(object):
-    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str):
+    def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
         self.s3_bucket: Any = s3_bucket
         self.lambdas: List[LambdaFunction] = [LambdaFunction(os.path.join(path, x), self.s3_bucket, s3_key_prefix)
                         for x in os.listdir(path) if os.access(os.path.join(path, x, 'Makefile'), os.R_OK)]
@@ -231,7 +276,7 @@ class VersionManifest(object):
             log.info('No version manifest supplied, artifact tags are not supported for this deployment')
             return self.default_manifest()
         log.info(f'Loading version manifest from s3://{s3_bucket.name}/{s3_key}')
-        o: boto3.Object = s3_bucket.Object(s3_key)
+        o = s3_bucket.Object(s3_key)
         r: Dict[str, Any] = o.get()
         m: Dict[str, Any] = yaml.load(r['Body'])
         log.info(f'Loaded version manifest for release {m["release"]["release_version"]} (S3 version: {o.version_id})')
