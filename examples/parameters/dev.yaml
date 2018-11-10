@@ -1,9 +1,9 @@
 ---
 common-parameters:
-  KmsDecryptLambdaArn: !StackOutput rubix-sport-live-kms-decrypt-lambda.KmsDecryptLambdaArn
+  KmsDecryptLambdaArn: !StackOutput my-project-kms-decrypt-lambda.KmsDecryptLambdaArn
 
 stacks:
-  - name: rubix-sport-live-kms-decrypt-lambda
+  - name: my-project-kms-decrypt-lambda
     template: support/kms-parameters-lambda.cf.yaml
     parameters:
       LambdaSourceS3Key: !LambdaZip kmsParameters.zip
