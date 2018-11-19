@@ -136,7 +136,8 @@ class LambdaFunction(object):
     def prepare(self) -> None:
         log.info(f'Running make in {self.path}...')
         try:
-            m = subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
+            m = subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, encoding='utf-8')
             log.debug('Make output will follow:')
             log.debug('-' * 64)
             log.debug(m.stdout)
