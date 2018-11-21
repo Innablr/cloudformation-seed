@@ -5,6 +5,7 @@ Preface
 ------
 
 This is a GIT submodule that helps you deploy your Cloudformation project without hassle:
+
 * Handle Cloudformation deployments of any scale
 * Allow to do multiple deployments of the same code with a different installation name
 * Automate Lambda code handling
@@ -12,6 +13,7 @@ This is a GIT submodule that helps you deploy your Cloudformation project withou
 * Package the whole deployment in a Docker image and version it
 
 It will:
+
 * Automatically create an S3 bucket according to the project name
 * Upload the Cloudformation templates into the bucket
 * Package and checksum your Lambda code and upload it into the bucket
@@ -37,6 +39,7 @@ Quick start
 ------
 
 ### First things first:
+
 1. Create a new directory for your project and do `git init` inside it
 2. Do `git submodule add git@bitbucket.org:innablr/cloudformation-ops-seed.git scripts`
 3. Copy everything from the `scripts/examples` directory to the root of the project
@@ -46,9 +49,11 @@ Quick start
 7. Add more stuff under the `cloudformation` directory and include it in `parameters/dev.yaml`
 
 ### Finally:
+
 Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment. Do `INSTALLATION_NAME=x0 RUNTIME_ENVIRONMENT=dev R53_DOMAIN=innablr-dev.lan make -f scripts/Makefile deploy`
 
 ### Optionally:
+
 Put the following content in `Makefile` in the root of your project:
 
 ```
@@ -76,6 +81,7 @@ Deep dive
 The Seed will automatically create an S3 bucket for operating the deployment. The name of the bucket is derived from the installation name and project name from `Makefile.particulars`
 
 ### Deployment configuration
+
 The `RUNTIME_ENVIRONMENT=dev` clause in the deployment directive points to the configuration file `dev.yaml` located under the `parameters` directory.
 
 You can have multiple runtime environments for the same project with different configuration, for example if you have *dev*, *test* and *prod* environments that reuse the same Cloudformation but need different configuration, for example VPC and subnet IDs.
