@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: S3 Buckets Cleanup Lambda
+
+Parameters:
+  TemplatesS3Bucket:
+    Type: String
+    Description: S3 Bucket with the components templates
+  InstallationName:
+    Type: String
+    Description: Unique stack installation name
+  RuntimeEnvironment:
+    Type: String
+    Description: The runtime environment config tag
+    Default: dev
+  Route53ZoneDomain:
+    Type: String
+    Description: Route53 zone domain that represents the environment
+
+Resources:
+  S3WatchdogLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaUpdatePasswordPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:DeleteBucket
+                  - s3:DeleteObject
+                  - s3:DeleteObjectTagging
+                  - s3:DeleteObjectVersion
+                  - s3:DeleteObjectVersionTagging
+                  - s3:GetBucketAcl
+                  - s3:HeadBucket
+                  - s3:ListBucket
+                  - s3:ListObjects
+                Resource: "*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+
+  S3WatchdogLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          import boto3
+
+          def lambda_handler(event, context):
+            try:
+              req_type = event['RequestType']
+              bucket_name = event['ResourceProperties'].get('Bucket')
+              responseData = {}
+              if req_type != 'Delete':
+                  print('Request type is [{0}], skipping...'.format(event['RequestType']))
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, 'watchdog-{0}'.format(bucket_name))
+                  return
+
+              print('Deleting everything in bucket {0}'.format(bucket_name))
+              s3 = boto3.resource('s3')
+              bucket = s3.Bucket(bucket_name)
+              bucket.objects.all().delete()
+              print('Done')
+
+            except Exception as e:
+                print('Something has gone wrong but we don\'t care. Stack trace will follow for your reference:')
+                print(str(e))
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData,  'watchdog-{0}'.format(bucket_name))
+      Description: Deletes non-empty buckets on stack deletion
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 300
+      Role: !GetAtt S3WatchdogLambdaExecutionRole.Arn
+
+Outputs:
+  S3WatchdogLambdaArn:
+    Value: !GetAtt S3WatchdogLambda.Arn

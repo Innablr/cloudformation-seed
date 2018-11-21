@@ -1,4 +1,7 @@
 ---
+
+AllConnectedAccounts: &CONNECTED_ACCOUNTS arn:aws:iam::000000000000:root,arn:aws:iam::111111111111:root,arn:aws:iam::222222222222:root
+
 common-parameters:
   KmsDecryptLambdaArn: !StackOutput my-project-kms-decrypt-lambda.KmsDecryptLambdaArn
 
@@ -7,6 +10,14 @@ stacks:
     template: support/kms-parameters-lambda.cf.yaml
     parameters:
       LambdaSourceS3Key: !LambdaZip kmsParameters.zip
+
+  - name: centralservices-s3-watchdog-lambda
+    template: support/s3-watchdog-lambda.cf.yaml
+
+  - name: centralservices-bucket-policy
+    template: centralservices/bucket-policy.cf.yaml
+    parameters:
+      ConnectedAccountArns: *CONNECTED_ACCOUNTS
 
   - name: my-project
     template: my-project.cf.yaml
