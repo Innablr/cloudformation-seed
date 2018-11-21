@@ -124,7 +124,7 @@ common-parameters:
 
 You can use `!StackOutput` (read below) in `common-parameters` and it will work as expected.
 
-You can also use YAML anchors like this:
+Instead of `common-parameters` you can also use YAML anchors like this:
 
 ```
 SAMLUsername: &SAML_USERNAME okta_sso
@@ -167,7 +167,7 @@ stacks:
       SSMLogsLambdaS3Key: !LambdaZip ssmLogsConfig.zip
       SAMLUsername: *SAML_USERNAME
       SAMLProviderName: *SAML_PROVIDER_NAME
-    pilot:                                               # when StackSet updated only update instances in these accounts
+    pilot:                                               # when StackSet is updated only update instances in these accounts
       accounts:
         - '000000000000'
     rollout:                                             # manage StackSet instances
@@ -196,7 +196,7 @@ If your deployment contains Lambda function they can be handled by the Seed auto
 
 1. Create a directory under `src` for your Lambda, say `kmsParameters`
 2. Do the development
-3. Create a `Makefile` in the directory you created and make sure that **the default target of the Makefile produces a zip-file**, say `kmsParameters.zip`
+3. Create a `Makefile` in the directory you have created and make sure that **the default target of the Makefile produces a zip-file**, say `kmsParameters.zip`
 4. In your runtime environment configuration use `!LambdaZip kmsParameters.zip` to pass the zip-file name to the CloudFormation template (see the example above)
 
 If your Lambda function is used in a StackSet and needs to be available from other AWS accounts make sure that you give access to the Seed bucket from those accounts. Refer to the stack `bucket-policy.cf.yaml` that is included in the examples.
