@@ -231,14 +231,25 @@ class CloudformationCollection(DirectoryScanner):
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
-        self.templates: List[CloudformationTemplate] = [
-            CloudformationTemplate(
+        self.templates: List[CloudformationTemplate] = []
+        for xf in self.template_files:
+            log.debug(f'Template {xf[0]} at {xf[1]}')
+            try:
+                params_section = [xs for xs in self.environment_parameters['stacks'] if xs['template'] == xf[0]].pop()
+                log.debug(f'Found deployment configuration as stack {params_section["name"]}')
+            except IndexError:
+                log.debug(f'Deployment config not found, adding as non-deployable')
+                params_section = {
+                    'name': xf[0],
+                    'template': xf[0]
+                }
+            self.templates.append(CloudformationTemplate(
                 self.s3_bucket,
-                xs['template'],
+                xf[0],
                 s3_key_prefix,
-                self.find_template_file(xs['template']), xs
-            ) for xs in self.environment_parameters.get('stacks', list())
-        ]
+                xf[1],
+                params_section)
+            )
 
     def list_deployable(self) -> List[CloudformationTemplate]:
         u = list()
@@ -253,6 +264,12 @@ class CloudformationCollection(DirectoryScanner):
     def find_template_key(self, template_name: str) -> str:
         try:
             return [x.template_key for x in self.templates if x.template == template_name].pop()
+        except IndexError:
+            raise InvalidStackConfiguration(f'Template {template_name} not found')
+
+    def find_template_url(self, template_name: str) -> str:
+        try:
+            return [x.template_url for x in self.templates if x.template == template_name].pop()
         except IndexError:
             raise InvalidStackConfiguration(f'Template {template_name} not found')
 
@@ -338,7 +355,8 @@ class StackParameters(object):
         class ParametersLoader(yaml.Loader):
             pass
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
-        ParametersLoader.add_constructor('!CloudformationTemplate', self.set_cloudformation_template)
+        ParametersLoader.add_constructor('!CloudformationTemplateS3Key', self.set_cloudformation_template)
+        ParametersLoader.add_constructor('!CloudformationTemplateS3Url', self.set_cloudformation_template_url)
         ParametersLoader.add_constructor('!StackOutput', self.set_stack_output)
         ParametersLoader.add_constructor('!ArtifactVersion', self.set_artifact_version)
         ParametersLoader.add_constructor('!ArtifactRepo', self.set_artifact_repo)
@@ -356,6 +374,13 @@ class StackParameters(object):
         template_name = loader.construct_scalar(node)
         log.debug(f'Looking up Cloudformation template {template_name}...')
         val = self.environment.templates.find_template_key(template_name)
+        log.debug(f'Found template {val}...')
+        return val
+
+    def set_cloudformation_template_url(self, loader, node):
+        template_name = loader.construct_scalar(node)
+        log.debug(f'Looking up Cloudformation template {template_name}...')
+        val = self.environment.templates.find_template_url(template_name)
         log.debug(f'Found template {val}...')
         return val
 
