@@ -231,24 +231,28 @@ class CloudformationCollection(DirectoryScanner):
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
-        self.templates: List[CloudformationTemplate] = []
+        self.templates: List[CloudformationTemplate] = [
+            CloudformationTemplate(
+                self.s3_bucket,
+                xs['template'],
+                s3_key_prefix,
+                self.find_template_file(xs['template']), xs
+            ) for xs in self.environment_parameters.get('stacks', list())
+        ]
         for xf in self.template_files:
             log.debug(f'Template {xf[0]} at {xf[1]}')
-            try:
-                params_section = [xs for xs in self.environment_parameters['stacks'] if xs['template'] == xf[0]].pop()
-                log.debug(f'Found deployment configuration as stack {params_section["name"]}')
-            except IndexError:
-                log.debug(f'Deployment config not found, adding as non-deployable')
-                params_section = {
-                    'name': xf[0],
-                    'template': xf[0]
-                }
+            if len([xt for xt in self.templates if xt.s3_key == xf[0]]) > 0:
+                continue
+            log.debug(f'Deployment config not found, adding as non-deployable')
             self.templates.append(CloudformationTemplate(
                 self.s3_bucket,
                 xf[0],
                 s3_key_prefix,
                 xf[1],
-                params_section)
+                {
+                    'name': xf[0],
+                    'template': xf[0]
+                })
             )
 
     def list_deployable(self) -> List[CloudformationTemplate]:
