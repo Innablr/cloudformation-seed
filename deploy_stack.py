@@ -12,6 +12,7 @@ import subprocess
 import sys
 import argparse
 import logging
+from string import Template
 from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
@@ -321,6 +322,28 @@ class VersionManifest(object):
         raise RuntimeError(f'Artifact {name} is not part of the release')
 
 
+class SSMParameters(object):
+    def __init__(self, ssm_parameters: Dict[str, str], product_name: str, installation_name: str) -> None:
+        self.product_name: str = product_name
+        self.installation_name: str = installation_name
+        self.parameters: Dict[str, str] = ssm_parameters
+
+    def parameter_path(self, parameter_name: str) -> str:
+        return f'/{self.product_name}/{self.installation_name}/{parameter_name}'
+
+    def set_all_parameters(self) -> None:
+        c = s.client('ssm')
+        for k, v in self.parameters.items():
+            log.info(f'Setting SSM {self.parameter_path(k)}=[{v}]')
+            c.put_parameter(
+                Name=self.parameter_path(k),
+                Description='Set by Cloudformation Seed',
+                Value=v,
+                Type='String',
+                Overwrite=True
+            )
+
+
 class StackParameters(object):
     def __init__(self, bucket, template, manifest, options, environment):
         self.parameters = dict()
@@ -362,6 +385,8 @@ class StackParameters(object):
         ParametersLoader.add_constructor('!CloudformationTemplateS3Key', self.set_cloudformation_template)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Url', self.set_cloudformation_template_url)
         ParametersLoader.add_constructor('!StackOutput', self.set_stack_output)
+        ParametersLoader.add_constructor('!SSMParameterDirect', self.set_ssm_parameter)
+        ParametersLoader.add_constructor('!SSMParameterDeclared', self.set_ssm_parameter_declared)
         ParametersLoader.add_constructor('!ArtifactVersion', self.set_artifact_version)
         ParametersLoader.add_constructor('!ArtifactRepo', self.set_artifact_repo)
         ParametersLoader.add_constructor('!ArtifactImage', self.set_artifact_image)
@@ -394,6 +419,22 @@ class StackParameters(object):
         val = self.environment.find_stack_output(output_id)
         log.debug(f'Found stack output {val}...')
         return val
+
+    def set_ssm_parameter(self, loader, node):
+        c = s.client('ssm')
+        parameter_name = loader.construct_scalar(node)
+        parameter_path = f'/{self.product_name}/{self.installation_name}/{parameter_name}'
+        log.debug(f'Looking up SSM parameter {parameter_path}...')
+        r = c.get_parameter(Name=parameter_path, WithDecryption=True)
+        val = r['Parameter']['Value']
+        log.debug(f'Found parameter version {r["Parameter"]["Version"]}: {val}...')
+        return val
+
+    def set_ssm_parameter_declared(self, loader, node):
+        parameter_name = loader.construct_scalar(node)
+        parameter_path = f'/{self.product_name}/{self.installation_name}/{parameter_name}'
+        log.debug(f'Setting declared SSM parameter to {parameter_path}')
+        return parameter_path
 
     def set_artifact_version(self, loader, node):
         artifact_name = loader.construct_scalar(node)
@@ -872,6 +913,7 @@ class StackDeployer(object):
         gc.add_argument('-i', '--installation-name', required=True, help='Stack name')
         gc.add_argument('-e', '--runtime-environment', required=True, help='Configuration section name')
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
+        gc.add_argument('-o', '--org-id', help='AWS Organisation name to allow S3 bucket access')
         gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
         gc.add_argument('--cap-iam', action='store_true', help='Enable CAP_IAM on the stack')
         gc.add_argument('--cap-named-iam', action='store_true', help='Enable CAP_NAMED_IAM on the stack')
@@ -895,6 +937,9 @@ class StackDeployer(object):
 
     def setup_args(self):
         self.bucket = self.set_bucket()
+        if self.o.org_id is not None:
+            log.info(f'Allowing access to the bucket for Organization {self.o.org_id}...')
+            self.set_bucket_policy()
         self.environment_parameters = self.read_parameters_yaml()
 
     def setup_logging(self):
@@ -933,6 +978,22 @@ class StackDeployer(object):
         with open(env_config_path, 'r') as f:
             return yaml.load(f, Loader=IgnoreYamlLoader)
 
+    def set_bucket_policy(self) -> None:
+        policy_template = Template('''
+        { "Version": "2012-10-17", "Statement": [ {
+            "Sid": "ReadTemplatesBucket",
+            "Effect": "Allow",
+            "Principal": { "AWS": "*" },
+            "Action": ["s3:GetObject","s3:ListBucket"],
+            "Resource": ["arn:aws:s3:::${bucket_name}/*","arn:aws:s3:::${bucket_name}"],
+            "Condition": {"StringEquals":
+                {"aws:PrincipalOrgID": [ "${aws_org_id}" ]}
+            }
+        } ] }
+        ''')
+        p = self.bucket.Policy()
+        p.put(Policy=policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=self.o.org_id))
+
     def set_bucket(self):
         r = s.resource('s3')
         b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
@@ -950,6 +1011,11 @@ class StackDeployer(object):
         log.info(f'Deleting S3 bucket {self.bucket.name}...')
         self.bucket.objects.all().delete()
         self.bucket.delete()
+
+    def set_ssm_parameters(self):
+        log.info(' Set parameter values in SSM '.center(64, '-'))
+        s = SSMParameters(self.environment_parameters, self.o.component_name, self.o.installation_name)
+        s.set_all_parameters()
 
     def deploy_environment(self):
         log.info(' Upload lambda code '.center(64, '-'))
