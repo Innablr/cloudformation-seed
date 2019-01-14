@@ -355,6 +355,7 @@ class StackParameters(object):
 
         self.installation_name = options.installation_name
         self.dns_domain = options.dns_domain
+        self.aws_org_id = options.org_id
         self.runtime_environment = options.runtime_environment
         self.parameters_dir = options.parameters_dir
 
@@ -381,6 +382,7 @@ class StackParameters(object):
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):
             pass
+        ParametersLoader.add_constructor('!Builtin', self.set_builtin)
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Key', self.set_cloudformation_template)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Url', self.set_cloudformation_template_url)
@@ -391,6 +393,14 @@ class StackParameters(object):
         ParametersLoader.add_constructor('!ArtifactRepo', self.set_artifact_repo)
         ParametersLoader.add_constructor('!ArtifactImage', self.set_artifact_image)
         return ParametersLoader
+
+    def set_built_in(self, loader, node):
+        param_name = loader.construct_scalar(node)
+        log.debug(f'Setting parameter {param_name}...')
+        val = self.get_special_parameter_value(param_name)
+        if val is None:
+            raise InvalidStackConfiguration(f'Unsuport builtin parameter [{param_name}], check your configuration')
+        return val
 
     def set_lambda_zip(self, loader, node):
         zip_name = loader.construct_scalar(node)
@@ -495,6 +505,9 @@ class StackParameters(object):
     def get_dns_domain(self):
         return self.dns_domain
 
+    def get_aws_org_id(self):
+        return self.aws_org_id or ''
+
     def get_special_parameter_value(self, param_name):
         if param_name == 'InstallationName':
             return self.get_installation_name()
@@ -504,6 +517,8 @@ class StackParameters(object):
             return self.get_dns_domain()
         if param_name == 'RuntimeEnvironment':
             return self.get_runtime_environment()
+        if param_name == 'AWSOrganizationID':
+            return self.get_aws_org_id()
 
     def parse_parameters(self):
         for k in self.template.template_body['Parameters'].keys():
