@@ -143,10 +143,10 @@ class LambdaFunction(object):
             log.debug('-' * 64)
             log.debug(m.stdout)
             log.debug('-' * 64)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             log.error(f'Make failed in {self.path}, make output will follow:')
             log.error('-' * 64)
-            log.error(m.stdout)
+            log.error(e.stdout)
             log.error('-' * 64)
             log.error('Aborting deployment')
             raise DeploymentFailed(f'Make failed in {self.path}')
@@ -953,7 +953,7 @@ class StackDeployer(object):
     def setup_args(self):
         self.bucket = self.set_bucket()
         if self.o.org_id is not None:
-            log.info(f'Allowing access to the bucket for Organization {self.o.org_id}...')
+            log.info(f'Allowing access to the bucket for AWS Organization {self.o.org_id}...')
             self.set_bucket_policy()
         self.environment_parameters = self.read_parameters_yaml()
 
@@ -1006,8 +1006,11 @@ class StackDeployer(object):
             }
         } ] }
         ''')
+        policy_text = policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=self.o.org_id).strip()
+        log.debug("Policy text will follow...")
+        log.debug(policy_text)
         p = self.bucket.Policy()
-        p.put(Policy=policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=self.o.org_id))
+        p.put(Policy=policy_text)
 
     def set_bucket(self):
         r = s.resource('s3')
