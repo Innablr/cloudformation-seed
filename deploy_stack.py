@@ -394,7 +394,7 @@ class StackParameters(object):
         ParametersLoader.add_constructor('!ArtifactImage', self.set_artifact_image)
         return ParametersLoader
 
-    def set_built_in(self, loader, node):
+    def set_builtin(self, loader, node):
         param_name = loader.construct_scalar(node)
         log.debug(f'Setting parameter {param_name}...')
         val = self.get_special_parameter_value(param_name)
