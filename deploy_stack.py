@@ -354,8 +354,9 @@ class StackParameters(object):
         self.manifest = manifest
 
         self.installation_name = options.installation_name
+        self.product_name = options.component_name
         self.dns_domain = options.dns_domain
-        self.aws_org_id = options.org_id
+        self.aws_org_id = options.org_id or ''
         self.runtime_environment = options.runtime_environment
         self.parameters_dir = options.parameters_dir
 
@@ -493,32 +494,19 @@ class StackParameters(object):
             if xv is not None:
                 return xv
 
-    def get_installation_name(self):
-        return self.installation_name
-
-    def get_runtime_environment(self):
-        return self.runtime_environment
-
-    def get_templates_s3_bucket(self):
-        return self.bucket.name
-
-    def get_dns_domain(self):
-        return self.dns_domain
-
-    def get_aws_org_id(self):
-        return self.aws_org_id or ''
-
     def get_special_parameter_value(self, param_name):
+        if param_name == 'ProductName':
+            return self.product_name
         if param_name == 'InstallationName':
-            return self.get_installation_name()
+            return self.installation_name
         if param_name == 'TemplatesS3Bucket':
-            return self.get_templates_s3_bucket()
+            return self.bucket.name
         if param_name == 'Route53ZoneDomain':
-            return self.get_dns_domain()
+            return self.dns_domain
         if param_name == 'RuntimeEnvironment':
-            return self.get_runtime_environment()
+            return self.runtime_environment
         if param_name == 'AWSOrganizationID':
-            return self.get_aws_org_id()
+            return self.aws_org_id
 
     def parse_parameters(self):
         for k in self.template.template_body['Parameters'].keys():
@@ -1030,12 +1018,13 @@ class StackDeployer(object):
         self.bucket.objects.all().delete()
         self.bucket.delete()
 
-    def set_ssm_parameters(self):
-        log.info(' Set parameter values in SSM '.center(64, '-'))
-        s = SSMParameters(self.environment_parameters, self.o.component_name, self.o.installation_name)
-        s.set_all_parameters()
-
     def deploy_environment(self):
+        if 'ssm-parameters' in self.environment_parameters:
+            log.info(' Set parameter values in SSM '.center(64, '-'))
+            s = SSMParameters(self.environment_parameters['ssm-parameters'],
+                self.o.component_name, self.o.installation_name)
+            s.set_all_parameters()
+
         log.info(' Upload lambda code '.center(64, '-'))
         l = LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)  # noqa E741
         l.prepare()
