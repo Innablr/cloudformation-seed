@@ -192,11 +192,11 @@ class CloudformationTemplate(object):
     def __init__(self, s3_bucket: Any, template_key: str, s3_key_prefix: str,
                     file_path: str, template_parameters: Dict[str, Any]) -> None:
         self.template_key: str = template_key
+        self.template_parameters: Dict[str, Any] = template_parameters
+        self.template_body: Dict['str', Any] = self.read_template_yaml(file_path)
         self.template_checksum: str = self.checksum_template(file_path)
         self.s3_key_prefix: str = s3_key_prefix
         self.s3_key: str = self.build_s3_key(self.template_key, self.template_checksum)
-        self.template_parameters: Dict[str, Any] = template_parameters
-        self.template_body: Dict['str', Any] = self.read_template_yaml(file_path)
         self.u: S3Uploadable = S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
 
     @property
@@ -220,6 +220,8 @@ class CloudformationTemplate(object):
         return self.u.s3_url
 
     def build_s3_key(self, template_key, template_checksum) -> str:
+        if self.template_parameters.get('predictable_name', False) is True:
+            return template_key
         return '/'.join([os.path.dirname(template_key),
             f'{template_checksum}-{os.path.basename(template_key)}']).strip('/')
 
@@ -274,6 +276,9 @@ class CloudformationCollection(DirectoryScanner):
         u = list()
         for xs in self.environment_parameters.get('stacks', list()):
             try:
+                if xs.get('deployable', True) is False:
+                    log.info(f'Stack {xs.get("name")} is not deployable, skipping')
+                    continue
                 stack_template = [xt for xt in self.templates if xt.name == xs.get('name')].pop()
                 u.append(stack_template)
             except IndexError:
