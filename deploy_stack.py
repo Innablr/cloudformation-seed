@@ -628,16 +628,18 @@ class CloudformationStack(object):
                 raise
         self.retrieve()
 
-    def format_caps(self, cap_iam: bool, cap_named_iam: bool) -> List[str]:
+    def format_caps(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> List[str]:
         caps = list()
         if cap_iam:
             caps.append('CAPABILITY_IAM')
         if cap_named_iam:
             caps.append('CAPABILITY_NAMED_IAM')
+        if cap_autoexpand:
+            caps.append('CAPABILITY_AUTO_EXPAND')
         return caps
 
-    def deploy(self, cap_iam: bool, cap_named_iam: bool) -> None:
-        caps = self.format_caps(cap_iam, cap_named_iam)
+    def deploy(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> None:
+        caps = self.format_caps(cap_iam, cap_named_iam, cap_autoexpand)
         if self.existing_stack is None:
             self.create_stack(caps)
         else:
@@ -733,16 +735,18 @@ class CloudformationStackSet(object):
         self.stack = r['StackSet']
         log.info(f'Found stackset {self.stack["StackSetName"]} in status {self.stack["Status"]}')
 
-    def format_caps(self, cap_iam: bool, cap_named_iam: bool) -> List[str]:
+    def format_caps(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> List[str]:
         caps = list()
         if cap_iam:
             caps.append('CAPABILITY_IAM')
         if cap_named_iam:
             caps.append('CAPABILITY_NAMED_IAM')
+        if cap_autoexpand:
+            caps.append('CAPABILITY_AUTO_EXPAND')
         return caps
 
-    def deploy(self, cap_iam: bool, cap_named_iam: bool) -> None:
-        caps = self.format_caps(cap_iam, cap_named_iam)
+    def deploy(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> None:
+        caps = self.format_caps(cap_iam, cap_named_iam, cap_autoexpand)
         self.wait_pending_operations()
         if self.existing_stack is None:
             self.create_stackset(caps)
@@ -870,8 +874,9 @@ class CloudformationEnvironment(object):
         self.installation_name = options.installation_name
         self.dns_domain = options.dns_domain
         self.runtime_environment = options.runtime_environment
-        self.cap_iam = options.cap_iam
-        self.cap_named_iam = options.cap_named_iam
+        self.cap_iam = True
+        self.cap_named_iam = True
+        self.cap_autoexpand = True
 
         self.lambdas = lambdas
         self.templates = templates
@@ -914,7 +919,7 @@ class CloudformationEnvironment(object):
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
             p.parse_parameters()
             xs.set_parameters(p)
-            xs.deploy(self.cap_iam, self.cap_named_iam)
+            xs.deploy(self.cap_iam, self.cap_named_iam, self.cap_autoexpand)
             log.info(f' {xs.stack_name} completed '.center(64, '-'))
 
     def teardown_stacks(self):
@@ -933,8 +938,6 @@ class StackDeployer(object):
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
         gc.add_argument('-o', '--org-id', help='AWS Organisation name to allow S3 bucket access')
         gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
-        gc.add_argument('--cap-iam', action='store_true', help='Enable CAP_IAM on the stack')
-        gc.add_argument('--cap-named-iam', action='store_true', help='Enable CAP_NAMED_IAM on the stack')
 
         gp = opts.add_argument_group('Paths')
         gp.add_argument('--templates-dir', default='cloudformation', help='Relative path to CF templates')
