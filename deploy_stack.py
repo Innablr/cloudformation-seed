@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Tuple, Any, Optional, NoReturn
 
+import re
 import yaml
 import boto3
 import hashlib
@@ -27,9 +28,13 @@ IgnoreYamlLoader.add_constructor(None, lambda l, n: n)
 s = boto3.Session()
 
 
+class InvalidParameters(Exception): pass            # noqa E701,E302
 class InvalidStackConfiguration(Exception): pass    # noqa E701,E302
 class DeploymentFailed(Exception): pass             # noqa E701,E302
 class StackTemplateInvalid(Exception): pass         # noqa E701,E302
+
+
+ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:organization/(?P<org_id>o-\w+$)')
 
 
 class DirectoryScanner(object):
@@ -369,7 +374,9 @@ class StackParameters(object):
         self.installation_name = options.installation_name
         self.product_name = options.component_name
         self.dns_domain = options.dns_domain
-        self.aws_org_id = options.org_id or ''
+        self.aws_org_arn = options.org_arn
+        self.aws_org_id = ORG_ARN_RE.match(self.aws_org_arn).group('org_id') \
+            if self.aws_org_arn is not None else None
         self.runtime_environment = options.runtime_environment
         self.parameters_dir = options.parameters_dir
 
@@ -522,6 +529,8 @@ class StackParameters(object):
             return self.runtime_environment
         if param_name == 'AWSOrganizationID':
             return self.aws_org_id
+        if param_name == 'AWSOrganizationARN':
+            return self.aws_org_arn
 
     def parse_parameters(self):
         for k in self.template.template_body['Parameters'].keys():
@@ -936,7 +945,7 @@ class StackDeployer(object):
         gc.add_argument('-i', '--installation-name', required=True, help='Stack name')
         gc.add_argument('-e', '--runtime-environment', required=True, help='Configuration section name')
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
-        gc.add_argument('-o', '--org-id', help='AWS Organisation name to allow S3 bucket access')
+        gc.add_argument('-o', '--org-arn', help='AWS Organisation ARN to allow S3 bucket access')
         gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
 
         gp = opts.add_argument_group('Paths')
@@ -958,8 +967,10 @@ class StackDeployer(object):
 
     def setup_args(self):
         self.bucket = self.set_bucket()
-        if self.o.org_id is not None:
-            log.info(f'Allowing access to the bucket for AWS Organization {self.o.org_id}...')
+        if self.o.org_arn is not None:
+            if ORG_ARN_RE.match(self.o.org_arn) is None:
+                raise InvalidParameters(f'Organisation ARN must be a valid ARN, not [{self.o.org_arn}]')
+            log.info(f'Allowing access to the bucket for AWS Organization {self.o.org_arn}...')
             self.set_bucket_policy()
         self.environment_parameters = self.read_parameters_yaml()
 
@@ -1000,6 +1011,7 @@ class StackDeployer(object):
             return yaml.load(f, Loader=IgnoreYamlLoader)
 
     def set_bucket_policy(self) -> None:
+        org_id = ORG_ARN_RE.match(self.o.org_arn).group('org_id')
         policy_template = Template('''
         { "Version": "2012-10-17", "Statement": [ {
             "Sid": "ReadTemplatesBucket",
@@ -1012,7 +1024,7 @@ class StackDeployer(object):
             }
         } ] }
         ''')
-        policy_text = policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=self.o.org_id).strip()
+        policy_text = policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=org_id).strip()
         log.debug("Policy text will follow...")
         log.debug(policy_text)
         p = self.bucket.Policy()
