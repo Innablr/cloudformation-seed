@@ -381,6 +381,8 @@ class StackParameters(object):
         self.parameters_dir = options.parameters_dir
 
         self.parameters_loader = self.configure_parameters_loader()
+        self.STACK_OUTPUT_RE = \
+            re.compile('^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
 
         self.environment_parameters = self.read_parameters_yaml(
                                             os.path.join(self.parameters_dir,
@@ -448,8 +450,15 @@ class StackParameters(object):
 
     def set_stack_output(self, loader, node):
         output_id = loader.construct_scalar(node)
+        m = self.STACK_OUTPUT_RE.match(output_id)
+        if m is None:
+            raise InvalidStackConfiguration(f'Output specification [{output_id}] invalid, '
+                f'must be stack-name.OutputId:default value')
         log.debug(f'Looking up stack output {output_id}...')
-        val = self.environment.find_stack_output(output_id)
+        val = self.environment.find_stack_output(m.group('stack_name'), m.group('output_name'))
+        if val is None:
+            if m.group('default_value') is not None:
+                val = m.group('default_value')
         log.debug(f'Found stack output {val}...')
         return val
 
@@ -908,12 +917,11 @@ class CloudformationEnvironment(object):
                 stacks.append(CloudformationStackSet(self.installation_name, xt))
         return stacks
 
-    def find_stack_output(self, output_id):
-        stack_name, output_name = output_id.split('.')
+    def find_stack_output(self, stack_name, output_name):
         try:
             return [xs.get_stack_output(output_name) for xs in self.stacks if xs.template.name == stack_name].pop()
         except IndexError:
-            raise InvalidStackConfiguration(f'Can\'t find output {output_id}, '
+            raise InvalidStackConfiguration(f'Can\'t find output {output_name} on stack {stack_name}, '
                         f'template {stack_name} is not part of the deployment')
 
     def find_template(self, template_name):
