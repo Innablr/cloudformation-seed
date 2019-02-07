@@ -578,7 +578,7 @@ class StackParameters(object):
 
     def format_operation_preferences(self) -> Dict[str, Union[int, List[str]]]:
         if self.template.template_type != 'stackset':
-            raise RuntimeError('Operation preferences roles only work for stacksets')
+            raise RuntimeError('Operation preferences only work for stacksets')
         prefs: Dict[str, Union[int, List[str]]] = dict()
         tolerance: Optional[str] = self.operation_preferences.get('failure_tolerance')
         max_concurrent: Optional[str] = self.operation_preferences.get('max_concurrent')
