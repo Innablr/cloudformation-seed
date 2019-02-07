@@ -764,7 +764,7 @@ class CloudformationStackSet(object):
             'Capabilities': caps,
         }
         params.update(self.stack_parameters.format_role_pair())
-        params.update(self.stack_parameters.format_operation_preferences())
+        params.update({'OperationPreferences': self.stack_parameters.format_operation_preferences()})
         c.update_stack_set(**params)
 
     def retrieve(self) -> None:
