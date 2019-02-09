@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Tuple, Any, Optional, NoReturn
+from typing import Union, Dict, List, Tuple, Any, Optional, NoReturn
 
 import re
 import yaml
@@ -364,8 +364,6 @@ class SSMParameters(object):
 
 class StackParameters(object):
     def __init__(self, bucket, template, manifest, options, environment):
-        self.parameters = dict()
-        self.overrides = dict()
         self.bucket = bucket
         self.template = template
         self.environment = environment
@@ -392,15 +390,14 @@ class StackParameters(object):
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
+
+        self.parameters = self.parse_parameters()
+
         self.stackset_admin_role_arn: Optional[str] = self.stack_definition.get('admin_role_arn')
         self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
+        self.operation_preferences: Dict[str, Union[str, List[str]]] = \
+                self.stack_definition.get('operation_preferences', {})
         self.rollout = self.stack_definition.get('rollout', list())
-        self.pilot_configuration = self.stack_definition.get('pilot', dict())
-        self.pilot_accounts = self.pilot_configuration.get('accounts', list())
-        self.pilot_regions = self.pilot_configuration.get(
-                                'regions',
-                                [s.client('cloudformation').meta.region_name]
-                            ) if len(self.pilot_accounts) > 0 else list()
 
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):
@@ -502,17 +499,6 @@ class StackParameters(object):
         log.debug(f'Found image name {val} for artifact {artifact_name}...')
         return val
 
-    def format_role_pair(self) -> Dict[str, str]:
-        if self.stackset_admin_role_arn and self.stackset_exec_role_name:
-            return {
-                'AdministrationRoleARN': self.stackset_admin_role_arn,
-                'ExecutionRoleName': self.stackset_exec_role_name
-            }
-        if self.stackset_admin_role_arn or self.stackset_exec_role_name:
-            raise InvalidStackConfiguration('Either specify both admin_role_arn and exec_role_name or none of them.'
-                                            ' Only one will not work')
-        return dict()
-
     def read_parameters_yaml(self, filename):
         with open(filename, 'r') as f:
             return yaml.load(f, Loader=self.parameters_loader)
@@ -542,30 +528,12 @@ class StackParameters(object):
             return self.aws_org_arn
 
     def parse_parameters(self):
-        for k in self.template.template_body['Parameters'].keys():
-            val = self.compute_parameter_value(k)
-            log.info(f'{k} = [{val if val is not None else ">>NOTSET<<"}]')
-            self.parameters[k] = val
+        p = {k: self.compute_parameter_value(k) for k in self.template.template_body['Parameters'].keys()}
+        log.info('\n'.join([f'{k}=[{">>> NOTSET <<<" if v is None else v}]' for k, v in p.items()]))
+        return p
 
-    def format_parameters_create(self):
+    def format_parameters(self):
         return [{'ParameterKey': k, 'ParameterValue': str(v)} for k, v in self.parameters.items() if v is not None]
-
-    def format_parameters_update(self, stack):
-        existing_parameters = {xp['ParameterKey']: xp['ParameterValue'] for xp in stack['Parameters']}
-        f = list()
-        for k, v in self.parameters.items():
-            if v is not None:
-                f.append({
-                    'ParameterKey': k,
-                    'ParameterValue': str(v)
-                })
-                continue
-            if k in existing_parameters:
-                f.append({
-                    'ParameterKey': k,
-                    'UsePreviousValue': True
-                })
-        return f
 
     def format_stackset_overrides(self, account_id):
         if self.template.template_type != 'stackset':
@@ -577,6 +545,43 @@ class StackParameters(object):
                                 for k, v in xa['override'].items() if v is not None]
                 return []
         raise RuntimeError(f'Stackset is not rolling out to account {account_id}')
+
+    def format_role_pair(self) -> Dict[str, str]:
+        if self.template.template_type != 'stackset':
+            raise RuntimeError('Stackset roles only work for stacksets')
+        if self.stackset_admin_role_arn and self.stackset_exec_role_name:
+            return {
+                'AdministrationRoleARN': self.stackset_admin_role_arn,
+                'ExecutionRoleName': self.stackset_exec_role_name
+            }
+        if self.stackset_admin_role_arn or self.stackset_exec_role_name:
+            raise InvalidStackConfiguration('Either specify both admin_role_arn and exec_role_name or none of them.'
+                                            ' Only one will not work')
+        return dict()
+
+    def format_operation_preferences(self) -> Dict[str, Union[int, List[str]]]:
+        if self.template.template_type != 'stackset':
+            raise RuntimeError('Operation preferences only work for stacksets')
+        prefs: Dict[str, Union[int, List[str]]] = dict()
+        tolerance: Optional[str] = self.operation_preferences.get('failure_tolerance')
+        max_concurrent: Optional[str] = self.operation_preferences.get('max_concurrent')
+        region_order: Optional[List[str]] = self.operation_preferences.get('region_order')
+        if tolerance is not None:
+            if tolerance.endswith('%'):
+                prefs['FailureTolerancePercentage'] = int(tolerance.rstrip('%'))
+            else:
+                prefs['FailureToleranceCount'] = int(tolerance)
+        if max_concurrent is not None:
+            if max_concurrent.endswith('%'):
+                prefs['MaxConcurrentPercentage'] = int(max_concurrent.rstrip('%'))
+            else:
+                prefs['MaxConcurrentCount'] = int(max_concurrent)
+        if region_order is not None:
+            if isinstance(region_order, list):
+                prefs['RegionOrder'] = region_order
+            else:
+                raise InvalidStackConfiguration('region_order in operation_preferences must be a list')
+        return {'OperationPreferences': prefs}
 
 
 class CloudformationStack(object):
@@ -617,7 +622,7 @@ class CloudformationStack(object):
         c.create_stack(
             StackName=self.stack_name,
             TemplateURL=self.template.template_url,
-            Parameters=self.stack_parameters.format_parameters_create(),
+            Parameters=self.stack_parameters.format_parameters(),
             DisableRollback=True,
             Capabilities=caps
         )
@@ -626,7 +631,7 @@ class CloudformationStack(object):
 
     def update_stack(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
+        p = self.stack_parameters.format_parameters()
         log.info(f'Updating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
@@ -721,7 +726,7 @@ class CloudformationStackSet(object):
         params: Dict[str, Any] = {
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
-            'Parameters': self.stack_parameters.format_parameters_create(),
+            'Parameters': self.stack_parameters.format_parameters(),
             'Capabilities': caps
         }
         params.update(self.stack_parameters.format_role_pair())
@@ -730,22 +735,20 @@ class CloudformationStackSet(object):
 
     def update_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
+        p = self.stack_parameters.format_parameters()
         log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
-        log.info(f' => capabilities {caps}')
-        log.info(f' => pilot accounts {self.stack_parameters.pilot_accounts}')
-        log.info(f' => pilot regions {self.stack_parameters.pilot_regions}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
-        c.update_stack_set(
-            StackSetName=self.stack_name,
-            TemplateURL=self.template.template_url,
-            Parameters=p,
-            Capabilities=caps,
-            Accounts=self.stack_parameters.pilot_accounts,
-            Regions=self.stack_parameters.pilot_regions
-        )
+        params = {
+            'StackSetName': self.stack_name,
+            'TemplateURL': self.template.template_url,
+            'Parameters': p,
+            'Capabilities': caps,
+        }
+        params.update(self.stack_parameters.format_role_pair())
+        params.update(self.stack_parameters.format_operation_preferences())
+        c.update_stack_set(**params)
 
     def retrieve(self) -> None:
         c = s.client('cloudformation')
@@ -789,15 +792,18 @@ class CloudformationStackSet(object):
         )
         existing_regions = {xi['Region'] for xi in i['Summaries']}
         delete_regions = existing_regions - set(regions)
-        if len(delete_regions) > 0:
-            log.info(f'Cleaning up stack instances for account {account_info["account"]} '
-                        f'in regions {delete_regions}...')
-            c.delete_stack_instances(
-                StackSetName=self.stack_name,
-                Accounts=[account_info['account']],
-                Regions=list(delete_regions),
-                RetainStacks=False
-            )
+        if not len(delete_regions) > 0:
+            return
+        log.info(f'Cleaning up stack instances for account {account_info["account"]} '
+                    f'in regions {delete_regions}...')
+        params = {
+            'StackSetName': self.stack_name,
+            'Accounts': [account_info['account']],
+            'Regions': list(delete_regions),
+            'RetainStacks': False
+        }
+        params.update(self.stack_parameters.format_operation_preferences())
+        c.delete_stack_instances(**params)
 
     def rollout_account(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
@@ -835,16 +841,27 @@ class CloudformationStackSet(object):
             )
             self.wait_pending_operations()
         if len(update_regions) > 0:
-            log.info(f'Updating stack instances in regions {update_regions}...')
-            c.update_stack_instances(
+            r = c.describe_stack_instance(
                 StackSetName=self.stack_name,
-                Accounts=[account_info['account']],
-                Regions=list(update_regions),
-                ParameterOverrides=overrides
+                StackInstanceAccount=account_info['account'],
+                StackInstanceRegion=list(update_regions).pop()
             )
-            self.wait_pending_operations()
+            current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
+                for xo in r['StackInstance']['ParameterOverrides']]
+            if sorted(current_overrides, key=lambda x: x['ParameterKey']) != \
+                    sorted(overrides, key=lambda x: x['ParameterKey']):
+                log.info(f'Updating stack instances in regions {update_regions}...')
+                c.update_stack_instances(
+                    StackSetName=self.stack_name,
+                    Accounts=[account_info['account']],
+                    Regions=list(update_regions),
+                    ParameterOverrides=overrides
+                )
+                self.wait_pending_operations()
+            else:
+                log.info('No changes to stack in account {0}, skipping'.format(account_info['account']))
 
-    def delete_stack_instances(self) -> None:
+    def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
         for xi in i['Summaries']:
@@ -867,7 +884,7 @@ class CloudformationStackSet(object):
             log.info(f'StackSet {self.stack_name} does not exist. Skipping.')
             return
         self.wait_pending_operations()
-        self.delete_stack_instances()
+        self.wipe_out_stackset_instances()
         self.delete_stackset()
 
     def wait_pending_operations(self) -> None:
@@ -934,7 +951,6 @@ class CloudformationEnvironment(object):
         for xs in self.stacks:
             log.info(f'Computing parameters for stack {xs.stack_name}...')
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
-            p.parse_parameters()
             xs.set_parameters(p)
             xs.deploy(self.cap_iam, self.cap_named_iam, self.cap_autoexpand)
             log.info(f' {xs.stack_name} completed '.center(64, '-'))
