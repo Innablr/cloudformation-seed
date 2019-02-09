@@ -364,8 +364,6 @@ class SSMParameters(object):
 
 class StackParameters(object):
     def __init__(self, bucket, template, manifest, options, environment):
-        self.parameters = dict()
-        self.overrides = dict()
         self.bucket = bucket
         self.template = template
         self.environment = environment
@@ -392,6 +390,9 @@ class StackParameters(object):
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
+
+        self.parameters = self.parse_parameters()
+
         self.stackset_admin_role_arn: Optional[str] = self.stack_definition.get('admin_role_arn')
         self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
         self.operation_preferences: Dict[str, Union[str, List[str]]] = \
@@ -527,30 +528,12 @@ class StackParameters(object):
             return self.aws_org_arn
 
     def parse_parameters(self):
-        for k in self.template.template_body['Parameters'].keys():
-            val = self.compute_parameter_value(k)
-            log.info(f'{k} = [{val if val is not None else ">>NOTSET<<"}]')
-            self.parameters[k] = val
+        p = {k: self.compute_parameter_value(k) for k in self.template.template_body['Parameters'].keys()}
+        log.info('\n'.join([f'{k}=[{">>> NOTSET <<<" if v is None else v}]' for k, v in p.items()]))
+        return p
 
-    def format_parameters_create(self):
+    def format_parameters(self):
         return [{'ParameterKey': k, 'ParameterValue': str(v)} for k, v in self.parameters.items() if v is not None]
-
-    def format_parameters_update(self, stack):
-        existing_parameters = {xp['ParameterKey']: xp['ParameterValue'] for xp in stack['Parameters']}
-        f = list()
-        for k, v in self.parameters.items():
-            if v is not None:
-                f.append({
-                    'ParameterKey': k,
-                    'ParameterValue': str(v)
-                })
-                continue
-            if k in existing_parameters:
-                f.append({
-                    'ParameterKey': k,
-                    'UsePreviousValue': True
-                })
-        return f
 
     def format_stackset_overrides(self, account_id):
         if self.template.template_type != 'stackset':
@@ -598,7 +581,7 @@ class StackParameters(object):
                 prefs['RegionOrder'] = region_order
             else:
                 raise InvalidStackConfiguration('region_order in operation_preferences must be a list')
-        return prefs
+        return {'OperationPreferences': prefs}
 
 
 class CloudformationStack(object):
@@ -639,7 +622,7 @@ class CloudformationStack(object):
         c.create_stack(
             StackName=self.stack_name,
             TemplateURL=self.template.template_url,
-            Parameters=self.stack_parameters.format_parameters_create(),
+            Parameters=self.stack_parameters.format_parameters(),
             DisableRollback=True,
             Capabilities=caps
         )
@@ -648,7 +631,7 @@ class CloudformationStack(object):
 
     def update_stack(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
+        p = self.stack_parameters.format_parameters()
         log.info(f'Updating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
@@ -743,7 +726,7 @@ class CloudformationStackSet(object):
         params: Dict[str, Any] = {
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
-            'Parameters': self.stack_parameters.format_parameters_create(),
+            'Parameters': self.stack_parameters.format_parameters(),
             'Capabilities': caps
         }
         params.update(self.stack_parameters.format_role_pair())
@@ -752,7 +735,7 @@ class CloudformationStackSet(object):
 
     def update_stackset(self, caps: List[str]) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
+        p = self.stack_parameters.format_parameters()
         log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
@@ -764,7 +747,7 @@ class CloudformationStackSet(object):
             'Capabilities': caps,
         }
         params.update(self.stack_parameters.format_role_pair())
-        params.update({'OperationPreferences': self.stack_parameters.format_operation_preferences()})
+        params.update(self.stack_parameters.format_operation_preferences())
         c.update_stack_set(**params)
 
     def retrieve(self) -> None:
@@ -860,7 +843,7 @@ class CloudformationStackSet(object):
         if len(update_regions) > 0:
             r = c.describe_stack_instance(
                 StackSetName=self.stack_name,
-                StackInstanceAccount=[account_info['account']],
+                StackInstanceAccount=account_info['account'],
                 StackInstanceRegion=list(update_regions).pop()
             )
             current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
@@ -876,7 +859,7 @@ class CloudformationStackSet(object):
                 )
                 self.wait_pending_operations()
             else:
-                log.info(f'No changes to stack in account {0}, skipping'.format(account_info['account']))
+                log.info('No changes to stack in account {0}, skipping'.format(account_info['account']))
 
     def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
@@ -968,7 +951,6 @@ class CloudformationEnvironment(object):
         for xs in self.stacks:
             log.info(f'Computing parameters for stack {xs.stack_name}...')
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
-            p.parse_parameters()
             xs.set_parameters(p)
             xs.deploy(self.cap_iam, self.cap_named_iam, self.cap_autoexpand)
             log.info(f' {xs.stack_name} completed '.center(64, '-'))
