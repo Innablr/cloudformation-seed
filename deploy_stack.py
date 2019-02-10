@@ -171,7 +171,9 @@ class LambdaFunction(object):
 class LambdaCollection(object):
     def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
         self.s3_bucket: Any = s3_bucket
-        self.lambdas: List[LambdaFunction] = [LambdaFunction(os.path.join(path, x), self.s3_bucket, s3_key_prefix)
+        self.lambdas: List[LambdaFunction] = list()
+        if os.path.isdir(path):
+            self.lambdas = [LambdaFunction(os.path.join(path, x), self.s3_bucket, s3_key_prefix)
                         for x in os.listdir(path) if os.access(os.path.join(path, x, 'Makefile'), os.R_OK)]
 
     def prepare(self) -> None:
@@ -252,6 +254,7 @@ class CloudformationCollection(DirectoryScanner):
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
+        log.info('>> Collecting templates that are included in the environment...')
         self.templates: List[CloudformationTemplate] = [
             CloudformationTemplate(
                 self.s3_bucket,
@@ -261,11 +264,11 @@ class CloudformationCollection(DirectoryScanner):
                 xs
             ) for xs in self.environment_parameters.get('stacks', list())
         ]
+        log.info('>> Collecting templates that are not included in the environment...')
         for xf in self.template_files:
-            log.debug(f'Template {xf[0]} at {xf[1]}')
-            if len([xt for xt in self.templates if xt.s3_key == xf[0]]) > 0:
+            if len([xt for xt in self.templates if xt.template_key == xf[0]]) > 0:
                 continue
-            log.debug(f'Deployment config not found, adding as non-deployable')
+            log.debug(f'Template {xf[0]} exists but not included in the environment. Adding as non-deployable')
             self.templates.append(CloudformationTemplate(
                 self.s3_bucket,
                 xf[0],
@@ -276,6 +279,7 @@ class CloudformationCollection(DirectoryScanner):
                     'template': xf[0]
                 })
             )
+        log.info('>> Done collecting templates')
 
     def list_deployable(self) -> List[CloudformationTemplate]:
         u = list()
@@ -364,8 +368,6 @@ class SSMParameters(object):
 
 class StackParameters(object):
     def __init__(self, bucket, template, manifest, options, environment):
-        self.parameters = dict()
-        self.overrides = dict()
         self.bucket = bucket
         self.template = template
         self.environment = environment
@@ -392,6 +394,9 @@ class StackParameters(object):
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
         self.specific_parameters = self.stack_definition.get('parameters', dict())
+
+        self.parameters = self.parse_parameters()
+
         self.stackset_admin_role_arn: Optional[str] = self.stack_definition.get('admin_role_arn')
         self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
         self.operation_preferences: Dict[str, Union[str, List[str]]] = \
@@ -527,30 +532,12 @@ class StackParameters(object):
             return self.aws_org_arn
 
     def parse_parameters(self):
-        for k in self.template.template_body['Parameters'].keys():
-            val = self.compute_parameter_value(k)
-            log.info(f'{k} = [{val if val is not None else ">>NOTSET<<"}]')
-            self.parameters[k] = val
+        p = {k: self.compute_parameter_value(k) for k in self.template.template_body['Parameters'].keys()}
+        log.info('\n'.join([f'{k}=[{">>> NOTSET <<<" if v is None else v}]' for k, v in p.items()]))
+        return p
 
-    def format_parameters_create(self):
+    def format_parameters(self):
         return [{'ParameterKey': k, 'ParameterValue': str(v)} for k, v in self.parameters.items() if v is not None]
-
-    def format_parameters_update(self, stack):
-        existing_parameters = {xp['ParameterKey']: xp['ParameterValue'] for xp in stack['Parameters']}
-        f = list()
-        for k, v in self.parameters.items():
-            if v is not None:
-                f.append({
-                    'ParameterKey': k,
-                    'ParameterValue': str(v)
-                })
-                continue
-            if k in existing_parameters:
-                f.append({
-                    'ParameterKey': k,
-                    'UsePreviousValue': True
-                })
-        return f
 
     def format_stackset_overrides(self, account_id):
         if self.template.template_type != 'stackset':
@@ -598,7 +585,7 @@ class StackParameters(object):
                 prefs['RegionOrder'] = region_order
             else:
                 raise InvalidStackConfiguration('region_order in operation_preferences must be a list')
-        return prefs
+        return {'OperationPreferences': prefs}
 
 
 class CloudformationStack(object):
@@ -608,6 +595,7 @@ class CloudformationStack(object):
         self.stack_name: str = f'{installation_name}-{self.template.name}'
         self.stack_parameters: Optional[StackParameters] = None
         self.existing_stack = self.find_existing_stack()
+        self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
 
     def set_parameters(self, parameters: StackParameters) -> None:
@@ -633,23 +621,25 @@ class CloudformationStack(object):
                 log.debug(f'Output {self.stack_name}.{output_name} = {xo["OutputValue"]}')
                 return xo['OutputValue']
 
-    def create_stack(self, caps: List[str]) -> None:
+    def create_stack(self) -> None:
         c = s.client('cloudformation')
-        log.info(f'Creating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
+        log.info(f'Creating stack {self.stack_name} with template'
+            f' {self.template.template_url} capabilities {self.caps}')
         c.create_stack(
             StackName=self.stack_name,
             TemplateURL=self.template.template_url,
-            Parameters=self.stack_parameters.format_parameters_create(),
+            Parameters=self.stack_parameters.format_parameters(),
             DisableRollback=True,
-            Capabilities=caps
+            Capabilities=self.caps
         )
         self.wait('stack_create_complete')
         self.retrieve()
 
-    def update_stack(self, caps: List[str]) -> None:
+    def update_stack(self) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
-        log.info(f'Updating stack {self.stack_name} with template {self.template.template_url} capabilities {caps}')
+        p = self.stack_parameters.format_parameters()
+        log.info(f'Updating stack {self.stack_name} with template'
+            f' {self.template.template_url} capabilities {self.caps}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
@@ -658,7 +648,7 @@ class CloudformationStack(object):
                 StackName=self.stack_name,
                 TemplateURL=self.template.template_url,
                 Parameters=p,
-                Capabilities=caps
+                Capabilities=self.caps
             )
             self.wait('stack_update_complete')
         except ClientError as e:
@@ -668,22 +658,11 @@ class CloudformationStack(object):
                 raise
         self.retrieve()
 
-    def format_caps(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> List[str]:
-        caps = list()
-        if cap_iam:
-            caps.append('CAPABILITY_IAM')
-        if cap_named_iam:
-            caps.append('CAPABILITY_NAMED_IAM')
-        if cap_autoexpand:
-            caps.append('CAPABILITY_AUTO_EXPAND')
-        return caps
-
-    def deploy(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> None:
-        caps = self.format_caps(cap_iam, cap_named_iam, cap_autoexpand)
+    def deploy(self) -> None:
         if self.existing_stack is None:
-            self.create_stack(caps)
+            self.create_stack()
         else:
-            self.update_stack(caps)
+            self.update_stack()
 
     def teardown(self) -> None:
         if self.existing_stack is None:
@@ -718,6 +697,7 @@ class CloudformationStackSet(object):
         self.stack_name: str = f'{installation_name}-{self.template.name}'
         self.stack_parameters: Optional[StackParameters] = None
         self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
+        self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']        
         self.stack = None
 
     def set_parameters(self, parameters: StackParameters) -> None:
@@ -738,22 +718,24 @@ class CloudformationStackSet(object):
         raise InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}'
                                         f', stacksets don\'t have outputs. Please review your configuration')
 
-    def create_stackset(self, caps: List[str]) -> None:
+    def create_stackset(self) -> None:
         c = s.client('cloudformation')
         params: Dict[str, Any] = {
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
-            'Parameters': self.stack_parameters.format_parameters_create(),
-            'Capabilities': caps
+            'Parameters': self.stack_parameters.format_parameters(),
+            'Capabilities': self.caps
         }
         params.update(self.stack_parameters.format_role_pair())
-        log.info(f'Creating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
+        log.info(f'Creating stackset {self.stack_name} with template'
+            f' {self.template.template_url} capabilities {self.caps}')
         c.create_stack_set(**params)
 
-    def update_stackset(self, caps: List[str]) -> None:
+    def update_stackset(self) -> None:
         c = s.client('cloudformation')
-        p = self.stack_parameters.format_parameters_update(self.existing_stack)
-        log.info(f'Updating stackset {self.stack_name} with template {self.template.template_url} capabilities {caps}')
+        p = self.stack_parameters.format_parameters()
+        log.info(f'Updating stackset {self.stack_name} with template'
+            f' {self.template.template_url} capabilities {self.caps}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
@@ -761,7 +743,7 @@ class CloudformationStackSet(object):
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
             'Parameters': p,
-            'Capabilities': caps,
+            'Capabilities': self.caps,
         }
         params.update(self.stack_parameters.format_role_pair())
         params.update(self.stack_parameters.format_operation_preferences())
@@ -773,27 +755,16 @@ class CloudformationStackSet(object):
         self.stack = r['StackSet']
         log.info(f'Found stackset {self.stack["StackSetName"]} in status {self.stack["Status"]}')
 
-    def format_caps(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> List[str]:
-        caps = list()
-        if cap_iam:
-            caps.append('CAPABILITY_IAM')
-        if cap_named_iam:
-            caps.append('CAPABILITY_NAMED_IAM')
-        if cap_autoexpand:
-            caps.append('CAPABILITY_AUTO_EXPAND')
-        return caps
-
-    def deploy(self, cap_iam: bool, cap_named_iam: bool, cap_autoexpand: bool) -> None:
-        caps = self.format_caps(cap_iam, cap_named_iam, cap_autoexpand)
+    def deploy(self) -> None:
         self.wait_pending_operations()
         if self.existing_stack is None:
-            self.create_stackset(caps)
+            self.create_stackset()
         else:
             for xa in self.stack_parameters.rollout:
                 log.info(f'Cleanup account {xa["account"]}...')
                 self.cleanup_stack_instances(xa)
                 self.wait_pending_operations()
-            self.update_stackset(caps)
+            self.update_stackset()
         self.wait_pending_operations()
         self.retrieve()
         for xa in self.stack_parameters.rollout:
@@ -860,7 +831,7 @@ class CloudformationStackSet(object):
         if len(update_regions) > 0:
             r = c.describe_stack_instance(
                 StackSetName=self.stack_name,
-                StackInstanceAccount=[account_info['account']],
+                StackInstanceAccount=account_info['account'],
                 StackInstanceRegion=list(update_regions).pop()
             )
             current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
@@ -876,7 +847,7 @@ class CloudformationStackSet(object):
                 )
                 self.wait_pending_operations()
             else:
-                log.info(f'No changes to stack in account {0}, skipping'.format(account_info['account']))
+                log.info('No changes to stack in account {0}, skipping'.format(account_info['account']))
 
     def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
@@ -926,9 +897,6 @@ class CloudformationEnvironment(object):
         self.installation_name = options.installation_name
         self.dns_domain = options.dns_domain
         self.runtime_environment = options.runtime_environment
-        self.cap_iam = True
-        self.cap_named_iam = True
-        self.cap_autoexpand = True
 
         self.lambdas = lambdas
         self.templates = templates
@@ -968,9 +936,8 @@ class CloudformationEnvironment(object):
         for xs in self.stacks:
             log.info(f'Computing parameters for stack {xs.stack_name}...')
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
-            p.parse_parameters()
             xs.set_parameters(p)
-            xs.deploy(self.cap_iam, self.cap_named_iam, self.cap_autoexpand)
+            xs.deploy()
             log.info(f' {xs.stack_name} completed '.center(64, '-'))
 
     def teardown_stacks(self):
@@ -1022,35 +989,22 @@ class StackDeployer(object):
         ch.setLevel(logging.DEBUG if self.o.verbose else logging.INFO)
         log.addHandler(ch)
 
-    def format_commandline(self):
-        password_args = ['--access-key', '--secret-key']
-        r = list()
-        mask_next = False
-        for xa in sys.argv:
-            if len(xa.split('=')) > 1 and xa.split('=')[0] in password_args:
-                r.append('{0}=******'.format(xa.split('=')[0]))
-            elif mask_next:
-                r.append('******')
-                mask_next = False
-            else:
-                r.append(xa)
-
-            if xa in password_args:
-                mask_next = True
-        return ' '.join(r)
-
     def __init__(self):
         self.o = self.configure_args()
         self.setup_logging()
-        log.info(' Commandline '.center(64, '-'))
-        log.info(self.format_commandline())
+        log.info(' >> Cloudformation Ops Seed >> Orchestrates large Cloudformation deployments >> ')
+        log.info(' '.join(sys.argv))
         self.setup_args()
 
     def read_parameters_yaml(self):
         env_config_path = os.path.join(self.o.parameters_dir, f'{self.o.runtime_environment}.yaml')
         log.info(f'Loading environment parameters from {env_config_path}')
-        with open(env_config_path, 'r') as f:
-            return yaml.load(f, Loader=IgnoreYamlLoader)
+        try:
+            with open(env_config_path, 'r') as f:
+                return yaml.load(f, Loader=IgnoreYamlLoader)
+        except OSError:
+            raise InvalidParameters(f'You have specified runtime environment {self.o.runtime_environment},'
+                f' but the file {env_config_path} does not exist') from None
 
     def set_bucket_policy(self) -> None:
         org_id = ORG_ARN_RE.match(self.o.org_arn).group('org_id')
