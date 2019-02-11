@@ -563,13 +563,13 @@ class StackParameters(object):
                                             ' Only one will not work')
         return dict()
 
-    def format_operation_preferences(self) -> Dict[str, Union[int, List[str]]]:
+    def format_operation_preferences(self):
         if self.template.template_type != 'stackset':
             raise RuntimeError('Operation preferences only work for stacksets')
-        prefs: Dict[str, Union[int, List[str]]] = dict()
-        tolerance: Optional[str] = self.operation_preferences.get('failure_tolerance')
-        max_concurrent: Optional[str] = self.operation_preferences.get('max_concurrent')
-        region_order: Optional[List[str]] = self.operation_preferences.get('region_order')
+        prefs = dict()
+        tolerance = self.operation_preferences.get('failure_tolerance')
+        max_concurrent = self.operation_preferences.get('max_concurrent')
+        region_order = self.operation_preferences.get('region_order')
         if tolerance is not None:
             if tolerance.endswith('%'):
                 prefs['FailureTolerancePercentage'] = int(tolerance.rstrip('%'))
@@ -592,8 +592,8 @@ class CloudformationStack(object):
 
     def __init__(self, installation_name: str, template: CloudformationTemplate) -> None:
         self.template: CloudformationTemplate = template
-        self.stack_name: str = f'{installation_name}-{self.template.name}'
-        self.stack_parameters: Optional[StackParameters] = None
+        self.stack_name = f'{installation_name}-{self.template.name}'
+        self.stack_parameters = None
         self.existing_stack = self.find_existing_stack()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
@@ -697,7 +697,7 @@ class CloudformationStackSet(object):
         self.stack_name: str = f'{installation_name}-{self.template.name}'
         self.stack_parameters: Optional[StackParameters] = None
         self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
-        self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']        
+        self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
 
     def set_parameters(self, parameters: StackParameters) -> None:
