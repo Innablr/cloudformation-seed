@@ -13,7 +13,6 @@ import subprocess
 import sys
 import argparse
 import logging
-import pprint
 from string import Template
 from botocore.exceptions import ClientError
 
