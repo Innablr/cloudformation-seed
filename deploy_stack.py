@@ -195,13 +195,29 @@ class LambdaCollection(object):
             raise InvalidStackConfiguration(f'Lambda function bundle {zip_name} not found')
 
 
+class CloudformationTemplateBody:
+    def __init__(self, template_text: str) -> None:
+        log.info(f'Parsing template body...')
+        self.text = template_text
+        self.checksum = self.calculate_checksum(self.text)
+        self.body: Dict[str, Any] = yaml.load(template_text, Loader=IgnoreYamlLoader)
+
+    @property
+    def parameters(self) -> Dict[str, Dict[str, str]]:
+        return self.body['Parameters']
+
+    def calculate_checksum(self, text) -> str:
+        sha1sum = hashlib.sha1()
+        sha1sum.update(bytes(self.text, 'utf-8'))
+        return sha1sum.hexdigest()
+
+
 class CloudformationTemplate(object):
     def __init__(self, s3_bucket: Any, template_key: str, s3_key_prefix: str,
                     file_path: str, template_parameters: Dict[str, Any]) -> None:
         self.template_key: str = template_key
         self.template_parameters: Dict[str, Any] = template_parameters
-        self.template_body: Dict['str', Any] = self.read_template_yaml(file_path)
-        self.template_checksum: str = self.checksum_template(file_path)
+        self.template_body: CloudformationTemplateBody = self.load_template(file_path)
         self.s3_key_prefix: str = s3_key_prefix
         self.s3_key: str = self.build_s3_key(self.template_key, self.template_checksum)
         self.u: S3Uploadable = S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
@@ -213,6 +229,10 @@ class CloudformationTemplate(object):
     @property
     def template(self) -> str:
         return self.template_parameters['template']
+
+    @property
+    def template_checksum(self) -> str:
+        return self.template_body.checksum
 
     @property
     def template_type(self) -> str:
@@ -232,17 +252,10 @@ class CloudformationTemplate(object):
         return '/'.join([os.path.dirname(template_key),
             f'{template_checksum}-{os.path.basename(template_key)}']).strip('/')
 
-    def checksum_template(self, file_path) -> str:
-        sha1sum = hashlib.sha1()
-        with open(file_path, 'rb') as f:
-            for xc in iter(lambda: f.read(4096), b""):
-                sha1sum.update(xc)
-        return sha1sum.hexdigest()
-
-    def read_template_yaml(self, file_path: str) -> Dict['str', Any]:
+    def load_template(self, file_path: str) -> CloudformationTemplateBody:
         log.info(f'Loading template for stack {self.name} from {file_path}...')
         with open(file_path, 'r') as f:
-            return yaml.load(f, Loader=IgnoreYamlLoader)
+            return CloudformationTemplateBody(f.read())
 
     def upload(self) -> None:
         self.u.upload()
@@ -532,7 +545,7 @@ class StackParameters(object):
             return self.aws_org_arn
 
     def parse_parameters(self):
-        p = {k: self.compute_parameter_value(k) for k in self.template.template_body['Parameters'].keys()}
+        p = {k: self.compute_parameter_value(k) for k in self.template.template_body.parameters.keys()}
         log.info('\n'.join([f'{k}=[{">>> NOTSET <<<" if v is None else v}]' for k, v in p.items()]))
         return p
 
@@ -731,9 +744,27 @@ class CloudformationStackSet(object):
             f' {self.template.template_url} capabilities {self.caps}')
         c.create_stack_set(**params)
 
+    def stackset_need_update(self) -> bool:
+        current_parameters: List[Dict[str, str]] = \
+            [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
+                for xo in self.existing_stack['Parameters']]
+        parameters_changed: bool = sorted(current_parameters, key=lambda x: x['ParameterKey']) != \
+            sorted(self.stack_parameters.format_parameters(), key=lambda x: x['ParameterKey'])
+        log.info('Parameters are {0} for stackset {1}'
+            .format('changing' if parameters_changed else 'not changing', self.stack_name))
+        template_changed: bool = \
+            CloudformationTemplateBody(self.existing_stack['TemplateBody']).checksum != self.template.template_checksum
+        log.info('Template is {0} for stackset {1}'
+            .format('changing' if template_changed else 'not changing', self.stack_name))
+        return parameters_changed or template_changed
+
     def update_stackset(self) -> None:
-        c = s.client('cloudformation')
+        if not self.stackset_need_update():
+            log.warn('No changes to stackset template or parameters. Skipping stackset update')
+            return
+
         p = self.stack_parameters.format_parameters()
+        c = s.client('cloudformation')
         log.info(f'Updating stackset {self.stack_name} with template'
             f' {self.template.template_url} capabilities {self.caps}')
         log.debug(' Parameters '.center(48, '-'))
