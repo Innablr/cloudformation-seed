@@ -7,16 +7,42 @@ import yaml
 import boto3
 import hashlib
 import zipfile
+import copy
 import time
 import os
 import subprocess
 import sys
 import argparse
 import logging
+from colorama import init as init_colorama, Fore, Style
 from string import Template
 from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
+
+
+class ColorFormatter(logging.Formatter):
+    DIM_LEVELS_BELOW = logging.DEBUG
+    YELLOW_LEVELS_ABOVE = logging.WARNING
+    RED_LEVELS_ABOVE = logging.ERROR
+
+    def format(self, record, *args, **kwargs):
+        new_record = copy.copy(record)
+        new_record.levelname = f'{Style.DIM}{new_record.levelname}{Style.RESET_ALL}'
+
+        if new_record.levelno <= self.__class__.DIM_LEVELS_BELOW:
+            new_record.msg = f'{Style.DIM}{new_record.msg}'
+        elif self.__class__.YELLOW_LEVELS_ABOVE <= new_record.levelno < self.__class__.RED_LEVELS_ABOVE:
+            new_record.msg = f'{Fore.YELLOW}{new_record.msg}'
+        elif self.__class__.RED_LEVELS_ABOVE <= new_record.levelno:
+            new_record.msg = f'{Fore.RED}{new_record.msg}'
+
+        new_record.msg = f'{new_record.msg}{Style.RESET_ALL}'
+        return super().format(new_record, *args, **kwargs)
+
+
+def log_section(section_text, color=Fore.CYAN, bold=False):
+    log.info(f' {color}{section_text}{Style.RESET_ALL} '.center(80, '=' if bold else '-'))
 
 
 class IgnoreYamlLoader(yaml.Loader):
@@ -74,22 +100,23 @@ class S3Uploadable(object):
             etag = o.e_tag.strip('"')
             object_key = o.key
         except ClientError:
-            log.info(f'{self.s3_key} doesn\'t seem to exist in the bucket')
+            log.debug(f'{self.s3_key} doesn\'t seem to exist in the bucket')
             return False
         if self.file_checksum in object_key:
-            log.info(f'Object name {self.s3_key} contains checksum {self.file_checksum}')
+            log.debug(f'Object name {self.s3_key} contains checksum {self.file_checksum}')
             return True
         if etag == self.file_checksum:
-            log.info(f'{self.s3_key} etag matches file md5sum: {self.file_checksum}')
+            log.debug(f'{self.s3_key} etag matches file md5sum: {self.file_checksum}')
             return True
-        log.info(f'Checksum {self.file_checksum} doesn\'t match object {object_key} etag {etag}')
+        log.debug(f'Checksum {self.file_checksum} doesn\'t match object {object_key} etag {etag}')
         return False
 
     def upload(self) -> None:
         if self.verify_existing_checksum():
-            log.info(f'Object in S3 is identical to {self.file_path}, skipping upload')
+            log.info(f'Object in S3 is identical to {Fore.GREEN}{self.file_path}{Style.RESET_ALL}, skipping upload')
             return
-        log.info(f'Uploading {self.file_path} into {self.s3_url}')
+        log.info(f'Uploading {Fore.GREEN}{self.file_path}{Style.RESET_ALL} '
+            f'into {Fore.GREEN}{self.s3_url}{Style.RESET_ALL}')
         self.s3_bucket.upload_file(self.file_path, self.s3_key, Callback=self.print_progress)
 
     @property
@@ -101,7 +128,7 @@ class S3RecursiveUploader(DirectoryScanner):
     def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
         self.s3_bucket: Any = s3_bucket
         self.s3_key_prefix: str = s3_key_prefix
-        log.info(f'Scanning files in {path}...')
+        log.info(f'Scanning files in {Fore.GREEN}{path}{Style.RESET_ALL}...')
         self.u = [S3Uploadable(f, self.s3_bucket, f'{self.s3_key_prefix}/{k}')
             for k, f in self.scan_directories(path)]
 
@@ -140,7 +167,7 @@ class LambdaFunction(object):
         return sha1sum.hexdigest()
 
     def prepare(self) -> None:
-        log.info(f'Running make in {self.path}...')
+        log.info(f'Running make in {Fore.GREEN}{self.path}{Style.RESET_ALL}...')
         try:
             m = subprocess.run(['make'], check=True, cwd=self.path, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, encoding='utf-8')
@@ -154,7 +181,7 @@ class LambdaFunction(object):
             log.error(e.stdout)
             log.error('-' * 64)
             log.error('Aborting deployment')
-            raise DeploymentFailed(f'Make failed in {self.path}')
+            raise DeploymentFailed(f'Make failed in {self.path}') from None
         self.zip_file = self.find_lambda_zipfile()
         self.zip_checksum = self.checksum_zipfile()
         self.u = S3Uploadable(os.path.join(self.path, self.zip_file), self.s3_bucket,
@@ -164,7 +191,7 @@ class LambdaFunction(object):
         self.u.upload()
 
     def cleanup(self) -> None:
-        log.info(f'Running make clean in {self.path}...')
+        log.info(f'Running make clean in {Fore.GREEN}{self.path}{Style.RESET_ALL}...')
         subprocess.run(['make', 'clean'], cwd=self.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -192,12 +219,11 @@ class LambdaCollection(object):
         try:
             return [x.s3_key for x in self.lambdas if x.zip_file == zip_name].pop()
         except IndexError:
-            raise InvalidStackConfiguration(f'Lambda function bundle {zip_name} not found')
+            raise InvalidStackConfiguration(f'Lambda function bundle {zip_name} not found') from None
 
 
 class CloudformationTemplateBody:
     def __init__(self, template_text: str) -> None:
-        log.info(f'Parsing template body...')
         self.text = template_text
         self.checksum = self.calculate_checksum(self.text)
         self.body: Dict[str, Any] = yaml.load(template_text, Loader=IgnoreYamlLoader)
@@ -253,7 +279,8 @@ class CloudformationTemplate(object):
             f'{template_checksum}-{os.path.basename(template_key)}']).strip('/')
 
     def load_template(self, file_path: str) -> CloudformationTemplateBody:
-        log.info(f'Loading template for stack {self.name} from {file_path}...')
+        log.info(f'Loading template for stack {Fore.GREEN}{self.name}{Style.RESET_ALL} '
+            f'from {Fore.GREEN}{file_path}{Style.RESET_ALL}...')
         with open(file_path, 'r') as f:
             return CloudformationTemplateBody(f.read())
 
@@ -267,7 +294,7 @@ class CloudformationCollection(DirectoryScanner):
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
-        log.info('>> Collecting templates that are included in the environment...')
+        log_section('Collecting templates included in the environment')
         self.templates: List[CloudformationTemplate] = [
             CloudformationTemplate(
                 self.s3_bucket,
@@ -277,11 +304,10 @@ class CloudformationCollection(DirectoryScanner):
                 xs
             ) for xs in self.environment_parameters.get('stacks', list())
         ]
-        log.info('>> Collecting templates that are not included in the environment...')
+        log_section('Collecting templates not included in the environment')
         for xf in self.template_files:
             if len([xt for xt in self.templates if xt.template_key == xf[0]]) > 0:
                 continue
-            log.debug(f'Template {xf[0]} exists but not included in the environment. Adding as non-deployable')
             self.templates.append(CloudformationTemplate(
                 self.s3_bucket,
                 xf[0],
@@ -292,26 +318,26 @@ class CloudformationCollection(DirectoryScanner):
                     'template': xf[0]
                 })
             )
-        log.info('>> Done collecting templates')
+        log_section('Done collecting templates')
 
     def list_deployable(self) -> List[CloudformationTemplate]:
         u = list()
         for xs in self.environment_parameters.get('stacks', list()):
             try:
                 if xs.get('deployable', True) is False:
-                    log.info(f'Stack {xs.get("name")} is not deployable, skipping')
+                    log.info(f'Stack {Fore.GREEN}{xs.get("name")}{Style.RESET_ALL} is not deployable, skipping')
                     continue
                 stack_template = [xt for xt in self.templates if xt.name == xs.get('name')].pop()
                 u.append(stack_template)
             except IndexError:
-                raise InvalidStackConfiguration(f'Template not found for {xs.get("name")}')
+                raise InvalidStackConfiguration(f'Template not found for {xs.get("name")}') from None
         return u
 
     def find_template(self, template_name: str) -> CloudformationTemplate:
         try:
             return [x for x in self.templates if x.template == template_name].pop()
         except IndexError:
-            raise InvalidStackConfiguration(f'Template {template_name} not found in this deployment')
+            raise InvalidStackConfiguration(f'Template {template_name} not found in this deployment') from None
 
     def find_template_file(self, template_key: str) -> str:
         for xk, xp in self.template_files:
@@ -331,13 +357,14 @@ class VersionManifest(object):
 
     def load_manifest(self, s3_bucket: Any, s3_key: str) -> Dict[str, Any]:
         if s3_key is None:
-            log.info('No version manifest supplied, artifact tags are not supported for this deployment')
+            log.warning('No version manifest supplied, artifact tags are not supported for this deployment')
             return self.default_manifest()
-        log.info(f'Loading version manifest from s3://{s3_bucket.name}/{s3_key}')
+        log.info(f'Loading version manifest from {Fore.GREEN}s3://{s3_bucket.name}/{s3_key}{Style.RESET_ALL}')
         o = s3_bucket.Object(s3_key)
         r: Dict[str, Any] = o.get()
         m: Dict[str, Any] = yaml.load(r['Body'])
-        log.info(f'Loaded version manifest for release {m["release"]["release_version"]} (S3 version: {o.version_id})')
+        log.info(f'Loaded version manifest for release {Fore.YELLOW}{m["release"]["release_version"]}{Style.RESET_ALL} '
+            f'(S3 version: {Fore.YELLOW}{o.version_id}{Style.RESET_ALL})')
         log.debug('Version Manifest'.center(64, '-'))
         log.debug(m)
         return m
@@ -354,7 +381,7 @@ class VersionManifest(object):
         for xa in self.manifest['release'].get('artifacts', list()):
             if xa['name'] == name:
                 return xa
-        raise RuntimeError(f'Artifact {name} is not part of the release')
+        raise DeploymentFailed(f'Artifact {name} is not part of the release')
 
 
 class SSMParameters(object):
@@ -369,7 +396,8 @@ class SSMParameters(object):
     def set_all_parameters(self) -> None:
         c = s.client('ssm')
         for k, v in self.parameters.items():
-            log.info(f'Setting SSM {self.parameter_path(k)}=[{v}]')
+            log.info(f'Setting SSM {Fore.GREEN}{self.parameter_path(k)}{Style.RESET_ALL}='
+                f'[{Fore.GREEN}{v}{Style.RESET_ALL}]')
             c.put_parameter(
                 Name=self.parameter_path(k),
                 Description='Set by Cloudformation Seed',
@@ -436,7 +464,7 @@ class StackParameters(object):
         log.debug(f'Setting parameter {param_name}...')
         val = self.get_special_parameter_value(param_name)
         if val is None:
-            raise InvalidStackConfiguration(f'Unsuport builtin parameter [{param_name}], check your configuration')
+            raise InvalidStackConfiguration(f'Unsupported builtin parameter [{param_name}]')
         return val
 
     def set_lambda_zip(self, loader, node):
@@ -546,7 +574,9 @@ class StackParameters(object):
 
     def parse_parameters(self):
         p = {k: self.compute_parameter_value(k) for k in self.template.template_body.parameters.keys()}
-        log.info('\n'.join([f'{k}=[{">>> NOTSET <<<" if v is None else v}]' for k, v in p.items()]))
+        for k, v in p.items():
+            log.info('{key:>30} ... [{value}]'.format(key=k,
+                value=f'{Fore.CYAN}>> EMPTY <<{Style.RESET_ALL}' if v is None else f'{Fore.GREEN}{v}{Style.RESET_ALL}'))
         return p
 
     def format_parameters(self):
@@ -586,16 +616,26 @@ class StackParameters(object):
         if tolerance is not None:
             if tolerance.endswith('%'):
                 prefs['FailureTolerancePercentage'] = int(tolerance.rstrip('%'))
+                log.info(f'Setting tolerance percentage to '
+                    f'{Fore.GREEN}{prefs["FailureTolerancePercentage"]}%{Style.RESET_ALL}')
             else:
                 prefs['FailureToleranceCount'] = int(tolerance)
+                log.info(f'Setting tolerance to '
+                    f'{Fore.GREEN}{prefs["FailureToleranceCount"]}{Style.RESET_ALL} stack instances')
         if max_concurrent is not None:
             if max_concurrent.endswith('%'):
                 prefs['MaxConcurrentPercentage'] = int(max_concurrent.rstrip('%'))
+                log.info(f'Setting concurrency percentage to '
+                    f'{Fore.GREEN}{prefs["MaxConcurrentPercentage"]}%{Style.RESET_ALL}')
             else:
                 prefs['MaxConcurrentCount'] = int(max_concurrent)
+                log.info(f'Setting concurrency to '
+                    f'{Fore.GREEN}{prefs["MaxConcurrentCount"]}{Style.RESET_ALL} stack instances')
         if region_order is not None:
             if isinstance(region_order, list):
                 prefs['RegionOrder'] = region_order
+                log.info(f'Setting region order to '
+                    f'{Fore.GREEN}{" >> ".join(prefs["RegionOrder"])}{Style.RESET_ALL}')
             else:
                 raise InvalidStackConfiguration('region_order in operation_preferences must be a list')
         return {'OperationPreferences': prefs}
@@ -616,13 +656,12 @@ class CloudformationStack(object):
 
     def find_existing_stack(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
-        log.info(f'Loading stack {self.stack_name}...')
         try:
             r = c.describe_stacks(StackName=self.stack_name)
-            log.info(f'Stack {self.stack_name} found')
+            log.info(f'Stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} exists')
             return r['Stacks'].pop()
         except Exception:
-            log.info(f'Stack {self.stack_name} does not exist, skipping')
+            log.info(f'Stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
             return None
 
     def get_stack_output(self, output_name: str) -> Optional[str]:
@@ -636,8 +675,8 @@ class CloudformationStack(object):
 
     def create_stack(self) -> None:
         c = s.client('cloudformation')
-        log.info(f'Creating stack {self.stack_name} with template'
-            f' {self.template.template_url} capabilities {self.caps}')
+        log.info(f'Creating stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
+            f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         c.create_stack(
             StackName=self.stack_name,
             TemplateURL=self.template.template_url,
@@ -651,8 +690,8 @@ class CloudformationStack(object):
     def update_stack(self) -> None:
         c = s.client('cloudformation')
         p = self.stack_parameters.format_parameters()
-        log.info(f'Updating stack {self.stack_name} with template'
-            f' {self.template.template_url} capabilities {self.caps}')
+        log.info(f'Updating stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
+            f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
@@ -666,7 +705,7 @@ class CloudformationStack(object):
             self.wait('stack_update_complete')
         except ClientError as e:
             if e.response['Error']['Message'] == 'No updates are to be performed.':
-                log.info(f'No updates are to be done on stack {self.stack_name}')
+                log.info(f'No updates are to be done on stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL}')
             else:
                 raise
         self.retrieve()
@@ -679,10 +718,10 @@ class CloudformationStack(object):
 
     def teardown(self) -> None:
         if self.existing_stack is None:
-            log.info(f'Stack {self.stack_name} does not exist. Skipping.')
+            log.warning(f'Stack {self.stack_name} does not exist. Skipping.')
             return
         c = s.client('cloudformation')
-        log.info(f'Deleting stack {self.stack_name}...')
+        log.info(f'Deleting stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL}...')
         c.delete_stack(StackName=self.stack_name)
         self.wait('stack_delete_complete')
 
@@ -695,13 +734,13 @@ class CloudformationStack(object):
         except Exception:
             r = s.resource('cloudformation')
             self.stack = r.Stack(self.stack_name)
-            log.error(f'Operation failed: {self.stack.stack_status_reason}')
-            raise DeploymentFailed(self.stack.stack_status_reason)
+            raise DeploymentFailed(f'Operation failed: {self.stack.stack_status_reason}') from None
 
     def retrieve(self) -> None:
         r = s.resource('cloudformation')
         self.stack = r.Stack(self.stack_name)
-        log.info(f'Found stack {self.stack.stack_name} in status {self.stack.stack_status}')
+        log.info(f'Found stack {Fore.GREEN}{self.stack.stack_name}{Style.RESET_ALL} '
+            f'in status {Fore.MAGENTA}{self.stack.stack_status}{Style.RESET_ALL}')
 
 
 class CloudformationStackSet(object):
@@ -718,13 +757,12 @@ class CloudformationStackSet(object):
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
-        log.info(f'Loading stackset {self.stack_name}...')
         try:
             r = c.describe_stack_set(StackSetName=self.stack_name)
-            log.info(f'Stackset {self.stack_name} found')
+            log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} exists')
             return r['StackSet']
         except Exception:
-            log.info(f'Stackset {self.stack_name} does not exist, skipping')
+            log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
             return None
 
     def get_stack_output(self, output_name: str) -> NoReturn:
@@ -740,33 +778,43 @@ class CloudformationStackSet(object):
             'Capabilities': self.caps
         }
         params.update(self.stack_parameters.format_role_pair())
-        log.info(f'Creating stackset {self.stack_name} with template'
-            f' {self.template.template_url} capabilities {self.caps}')
+        log.info(f'Creating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
+            f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         c.create_stack_set(**params)
 
     def stackset_need_update(self) -> bool:
         current_parameters: List[Dict[str, str]] = \
             [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
                 for xo in self.existing_stack['Parameters']]
+        log.debug('>> Current parameters')
+        log.debug(current_parameters)
+        log.debug('>> New parameters')
+        log.debug(self.stack_parameters.format_parameters())
         parameters_changed: bool = sorted(current_parameters, key=lambda x: x['ParameterKey']) != \
             sorted(self.stack_parameters.format_parameters(), key=lambda x: x['ParameterKey'])
-        log.info('Parameters are {0} for stackset {1}'
-            .format('changing' if parameters_changed else 'not changing', self.stack_name))
+        log.info('Parameters are {color}{is_changing}{color_reset} for stackset {color}{stackset_name}{color_reset}'
+            .format(is_changing='changing' if parameters_changed else 'not changing',
+                stackset_name=self.stack_name,
+                color=Fore.GREEN,
+                color_reset=Style.RESET_ALL))
         template_changed: bool = \
             CloudformationTemplateBody(self.existing_stack['TemplateBody']).checksum != self.template.template_checksum
-        log.info('Template is {0} for stackset {1}'
-            .format('changing' if template_changed else 'not changing', self.stack_name))
+        log.info('Template is {color}{is_changing}{color_reset} for stackset {color}{stackset_name}{color_reset}'
+            .format(is_changing='changing' if template_changed else 'not changing',
+                stackset_name=self.stack_name,
+                color=Fore.GREEN,
+                color_reset=Style.RESET_ALL))
         return parameters_changed or template_changed
 
     def update_stackset(self) -> None:
         if not self.stackset_need_update():
-            log.warn('No changes to stackset template or parameters. Skipping stackset update')
+            log.info('No changes to stackset template or parameters. Skipping stackset update')
             return
 
         p = self.stack_parameters.format_parameters()
         c = s.client('cloudformation')
-        log.info(f'Updating stackset {self.stack_name} with template'
-            f' {self.template.template_url} capabilities {self.caps}')
+        log.info(f'Updating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
+            f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         log.debug(' Parameters '.center(48, '-'))
         log.debug(p)
         log.debug('-'.center(48, '-'))
@@ -784,7 +832,8 @@ class CloudformationStackSet(object):
         c = s.client('cloudformation')
         r = c.describe_stack_set(StackSetName=self.stack_name)
         self.stack = r['StackSet']
-        log.info(f'Found stackset {self.stack["StackSetName"]} in status {self.stack["Status"]}')
+        log.info(f'Found stackset {Fore.GREEN}{self.stack["StackSetName"]}{Style.RESET_ALL} '
+            f'in status {Fore.MAGENTA}{self.stack["Status"]}{Style.RESET_ALL}')
 
     def deploy(self) -> None:
         self.wait_pending_operations()
@@ -943,10 +992,10 @@ class CloudformationEnvironment(object):
         stacks = list()
         for xt in self.templates.list_deployable():
             if xt.template_type == 'stack':
-                log.info(f'Adding stack {xt.name} at {xt.template_url}...')
+                log.info(f'Adding stack {Fore.GREEN}{xt.name}{Style.RESET_ALL}...')
                 stacks.append(CloudformationStack(self.installation_name, xt))
             elif xt.template_type == 'stackset':
-                log.info(f'Adding stackset {xt.name} at {xt.template_url}...')
+                log.info(f'Adding stackset {Fore.GREEN}{xt.name}{Style.RESET_ALL}...')
                 stacks.append(CloudformationStackSet(self.installation_name, xt))
         return stacks
 
@@ -955,21 +1004,21 @@ class CloudformationEnvironment(object):
             return [xs.get_stack_output(output_name) for xs in self.stacks if xs.template.name == stack_name].pop()
         except IndexError:
             raise InvalidStackConfiguration(f'Can\'t find output {output_name} on stack {stack_name}, '
-                        f'template {stack_name} is not part of the deployment')
+                        f'template {stack_name} is not part of the deployment') from None
 
     def find_template(self, template_name):
         try:
             return [f'{xt.s3_key_prefix}/{xt.s3_key}' for xt in self.templates if xt.s3_key == template_name].pop()
         except IndexError:
-            raise InvalidStackConfiguration(f'Template {template_name} is not part of the deployment')
+            raise InvalidStackConfiguration(f'Template {template_name} is not part of the deployment') from None
 
     def deploy_stacks(self):
         for xs in self.stacks:
-            log.info(f'Computing parameters for stack {xs.stack_name}...')
+            log_section(f'Deploying stack {xs.stack_name}')
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
             xs.set_parameters(p)
             xs.deploy()
-            log.info(f' {xs.stack_name} completed '.center(64, '-'))
+            log_section(f'{xs.stack_name} deployment complete')
 
     def teardown_stacks(self):
         for xs in reversed(self.stacks):
@@ -999,6 +1048,7 @@ class StackDeployer(object):
 
         go = opts.add_argument_group('Operation parameters')
         go.add_argument('-v', '--verbose', action='store_true', help='Be more verbose')
+        go.add_argument('--no-color', action='store_true', help='Strip colors for basic terminals')
         go.add_argument('--cleanup-lambda', action='store_true', help='Run make clean after uploading Lambda functions')
 
         opts.add_argument('command', choices=['deploy', 'teardown'], help='Deploy or teardown the environment')
@@ -1010,26 +1060,36 @@ class StackDeployer(object):
         if self.o.org_arn is not None:
             if ORG_ARN_RE.match(self.o.org_arn) is None:
                 raise InvalidParameters(f'Organisation ARN must be a valid ARN, not [{self.o.org_arn}]')
-            log.info(f'Allowing access to the bucket for AWS Organization {self.o.org_arn}...')
             self.set_bucket_policy()
         self.environment_parameters = self.read_parameters_yaml()
 
     def setup_logging(self):
+        if self.o.no_color:
+            init_colorama(strip=True)
         log.setLevel(logging.DEBUG if self.o.verbose else logging.INFO)
         ch = logging.StreamHandler(sys.stdout)
         ch.setLevel(logging.DEBUG if self.o.verbose else logging.INFO)
+        if not self.o.no_color:
+            ch.setFormatter(ColorFormatter('%(levelname)s %(message)s'))
+        else:
+            ch.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
         log.addHandler(ch)
 
     def __init__(self):
         self.o = self.configure_args()
         self.setup_logging()
-        log.info(' >> Cloudformation Ops Seed >> Orchestrates large Cloudformation deployments >> ')
+        log.info(f'{Fore.CYAN} >> Cloudformation Ops Seed >> '
+            f'Orchestrates large Cloudformation deployments >> {Style.RESET_ALL}')
         log.info(' '.join(sys.argv))
-        self.setup_args()
+        try:
+            self.setup_args()
+        except Exception as e:
+            log.exception(str(e), exc_info=False)
+            sys.exit(4)
 
     def read_parameters_yaml(self):
         env_config_path = os.path.join(self.o.parameters_dir, f'{self.o.runtime_environment}.yaml')
-        log.info(f'Loading environment parameters from {env_config_path}')
+        log.info(f'Loading environment parameters from {Fore.GREEN}{env_config_path}{Style.RESET_ALL}')
         try:
             with open(env_config_path, 'r') as f:
                 return yaml.load(f, Loader=IgnoreYamlLoader)
@@ -1052,6 +1112,7 @@ class StackDeployer(object):
         } ] }
         ''')
         policy_text = policy_template.substitute(bucket_name=self.bucket.name, aws_org_id=org_id).strip()
+        log.info(f'Allowing access to the bucket for AWS Organization {Fore.GREEN}{self.o.org_arn}{Style.RESET_ALL}...')
         log.debug("Policy text will follow...")
         log.debug(policy_text)
         p = self.bucket.Policy()
@@ -1061,72 +1122,76 @@ class StackDeployer(object):
         r = s.resource('s3')
         b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
         v = r.BucketVersioning(b.name)
-        log.info(f'Creating S3 bucket {b.name}...')
+        log.info(f'Creating S3 bucket {Fore.GREEN}{b.name}{Style.RESET_ALL}...')
         try:
             b.create(ACL='private', CreateBucketConfiguration={'LocationConstraint': s.region_name})
             v.enable()
         except ClientError as e:
             if e.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
-                log.info(f'Bucket {b.name} exists')
+                log.info(f'Bucket {Fore.GREEN}{b.name}{Style.RESET_ALL} exists, reusing')
         return b
 
     def delete_bucket(self):
-        log.info(f'Deleting S3 bucket {self.bucket.name}...')
+        log.info(f'Deleting S3 bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
         self.bucket.objects.all().delete()
         self.bucket.delete()
 
     def deploy_environment(self):
         if 'ssm-parameters' in self.environment_parameters:
-            log.info(' Set parameter values in SSM '.center(64, '-'))
+            log_section('Set parameter values in SSM', bold=True)
             s = SSMParameters(self.environment_parameters['ssm-parameters'],
                 self.o.component_name, self.o.installation_name)
             s.set_all_parameters()
 
-        log.info(' Upload lambda code '.center(64, '-'))
+        log_section('Upload lambda code', bold=True)
         l = LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)  # noqa E741
         l.prepare()
         l.upload()
         if self.o.cleanup_lambda:
             l.cleanup()
 
-        log.info(' Loading version manifest '.center(64, '-'))
+        log_section('Loading version manifest', bold=True)
         m = VersionManifest(self.bucket, self.o.manifest)
 
-        log.info(' Upload Application configuration '.center(64, '-'))
+        log_section('Upload Application configuration', bold=True)
         c = S3RecursiveUploader(os.path.join(self.o.appconfig_dir, self.o.runtime_environment),
                 self.bucket, self.o.appconfig_prefix)
         c.upload()
 
-        log.info(' Collect and upload Cloudformation templates '.center(64, '-'))
+        log_section('Collect and upload Cloudformation templates', bold=True)
         t = CloudformationCollection(self.o.templates_dir, self.bucket,
                 self.o.templates_prefix, self.environment_parameters)
         t.upload()
 
-        log.info(' Initialise Cloudformation environment '.center(64, '-'))
+        log_section('Initialise Cloudformation environment', bold=True)
         e = CloudformationEnvironment(self.bucket, l, t, m, self.o)
 
-        log.info(' Deploy stacks '.center(64, '-'))
+        log_section('Deploy stacks', bold=True)
         e.deploy_stacks()
 
     def teardown_environment(self):
-        log.info(' Collect Cloudformation templates '.center(64, '-'))
+        log_section('Collect Cloudformation templates', bold=True)
         t = CloudformationCollection(self.o.templates_dir, self.bucket,
                 self.o.templates_prefix, self.environment_parameters)
 
-        log.info(' Initialise Cloudformation environment '.center(64, '-'))
+        log_section('Initialise Cloudformation environment', bold=True)
         e = CloudformationEnvironment(self.bucket, None, t, None, self.o)
 
-        log.info(' Delete stacks '.center(64, '-'))
+        log_section('Delete stacks', bold=True)
         e.teardown_stacks()
 
-        log.info(' Delete bucket '.center(64, '-'))
+        log_section('Delete bucket', bold=True)
         self.delete_bucket()
 
     def run(self):
-        if self.o.command == 'deploy':
-            self.deploy_environment()
-        elif self.o.command == 'teardown':
-            self.teardown_environment()
+        try:
+            if self.o.command == 'deploy':
+                self.deploy_environment()
+            elif self.o.command == 'teardown':
+                self.teardown_environment()
+        except Exception as e:
+            log.exception(str(e), exc_info=self.o.verbose)
+            log.error('Aborting deployment')
 
 
 if __name__ == '__main__':
