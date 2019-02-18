@@ -14,6 +14,7 @@ import subprocess
 import sys
 import argparse
 import logging
+from functools import wraps
 from colorama import init as init_colorama, Fore, Style
 from string import Template
 from botocore.exceptions import ClientError
@@ -616,30 +617,37 @@ class StackParameters(object):
         max_concurrent = self.operation_preferences.get('max_concurrent')
         region_order = self.operation_preferences.get('region_order')
         if tolerance is not None:
-            if tolerance.endswith('%'):
+            if isinstance(tolerance, int):
+                prefs['FailureToleranceCount'] = tolerance
+                log.info(f'Setting tolerance to '
+                    f'{Fore.GREEN}{prefs["FailureToleranceCount"]}{Style.RESET_ALL} stack instances')
+            elif tolerance.endswith('%'):
                 prefs['FailureTolerancePercentage'] = int(tolerance.rstrip('%'))
                 log.info(f'Setting tolerance percentage to '
                     f'{Fore.GREEN}{prefs["FailureTolerancePercentage"]}%{Style.RESET_ALL}')
             else:
-                prefs['FailureToleranceCount'] = int(tolerance)
-                log.info(f'Setting tolerance to '
-                    f'{Fore.GREEN}{prefs["FailureToleranceCount"]}{Style.RESET_ALL} stack instances')
+                raise InvalidStackConfiguration('failure_tolerance in operation_preferences must either be '
+                    f'integer or have a percent sign on stack {self.template.name}')
         if max_concurrent is not None:
-            if max_concurrent.endswith('%'):
+            if isinstance(max_concurrent, int):
+                prefs['MaxConcurrentCount'] = max_concurrent
+                log.info(f'Setting concurrency to '
+                    f'{Fore.GREEN}{prefs["MaxConcurrentCount"]}{Style.RESET_ALL} stack instances')
+            elif max_concurrent.endswith('%'):
                 prefs['MaxConcurrentPercentage'] = int(max_concurrent.rstrip('%'))
                 log.info(f'Setting concurrency percentage to '
                     f'{Fore.GREEN}{prefs["MaxConcurrentPercentage"]}%{Style.RESET_ALL}')
             else:
-                prefs['MaxConcurrentCount'] = int(max_concurrent)
-                log.info(f'Setting concurrency to '
-                    f'{Fore.GREEN}{prefs["MaxConcurrentCount"]}{Style.RESET_ALL} stack instances')
+                raise InvalidStackConfiguration('max_concurrent in operation_preferences must either be '
+                    f'integer or have a percent sign on stack {self.template.name}')
         if region_order is not None:
             if isinstance(region_order, list):
                 prefs['RegionOrder'] = region_order
                 log.info(f'Setting region order to '
                     f'{Fore.GREEN}{" >> ".join(prefs["RegionOrder"])}{Style.RESET_ALL}')
             else:
-                raise InvalidStackConfiguration('region_order in operation_preferences must be a list')
+                raise InvalidStackConfiguration('region_order in operation_preferences must be a list '
+                    f'on stack {self.template.name}')
         return {'OperationPreferences': prefs}
 
 
@@ -754,6 +762,21 @@ class CloudformationStackSet(object):
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
 
+    def retry_pending(f):
+        @wraps(f)
+        def wrapper(self, *args, **kwargs):
+            while True:
+                try:
+                    return f(self, *args, **kwargs)
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'OperationInProgressException':
+                        log.warning(f'Operation is in progress on stackset {self.stack_name}, retrying after wait...')
+                        self.wait_pending_operations()
+                        log.warning('Retrying operation')
+                    else:
+                        raise
+        return wrapper
+
     def set_parameters(self, parameters: StackParameters) -> None:
         self.stack_parameters = parameters
 
@@ -771,6 +794,7 @@ class CloudformationStackSet(object):
         raise InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}'
                                         f', stacksets don\'t have outputs. Please review your configuration')
 
+    @retry_pending
     def create_stackset(self) -> None:
         c = s.client('cloudformation')
         params: Dict[str, Any] = {
@@ -783,6 +807,7 @@ class CloudformationStackSet(object):
         log.info(f'Creating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         c.create_stack_set(**params)
+        self.wait_pending_operations()
 
     def stackset_need_update(self) -> bool:
         current_parameters: List[Dict[str, str]] = \
@@ -808,6 +833,7 @@ class CloudformationStackSet(object):
                 color_reset=Style.RESET_ALL))
         return parameters_changed or template_changed
 
+    @retry_pending
     def update_stackset(self) -> None:
         if not self.stackset_need_update():
             log.info('No changes to stackset template or parameters. Skipping stackset update')
@@ -829,6 +855,7 @@ class CloudformationStackSet(object):
         params.update(self.stack_parameters.format_role_pair())
         params.update(self.stack_parameters.format_operation_preferences())
         c.update_stack_set(**params)
+        self.wait_pending_operations()
 
     def retrieve(self) -> None:
         c = s.client('cloudformation')
@@ -838,21 +865,18 @@ class CloudformationStackSet(object):
             f'in status {Fore.MAGENTA}{self.stack["Status"]}{Style.RESET_ALL}')
 
     def deploy(self) -> None:
-        self.wait_pending_operations()
         if self.existing_stack is None:
             self.create_stackset()
         else:
             for xa in self.stack_parameters.rollout:
                 log.info(f'Cleanup account {xa["account"]}...')
                 self.cleanup_stack_instances(xa)
-                self.wait_pending_operations()
             self.update_stackset()
-        self.wait_pending_operations()
         self.retrieve()
         for xa in self.stack_parameters.rollout:
             self.rollout_account(xa)
-            self.wait_pending_operations()
 
+    @retry_pending
     def cleanup_stack_instances(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
         regions = account_info.get('regions', [c.meta.region_name])
@@ -874,7 +898,9 @@ class CloudformationStackSet(object):
         }
         params.update(self.stack_parameters.format_operation_preferences())
         c.delete_stack_instances(**params)
+        self.wait_pending_operations()
 
+    @retry_pending
     def rollout_account(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
         log.info(f'Rolling out stackset {self.stack_name} to account {account_info["account"]}...')
@@ -931,6 +957,7 @@ class CloudformationStackSet(object):
             else:
                 log.info('No changes to stack in account {0}, skipping'.format(account_info['account']))
 
+    @retry_pending
     def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
@@ -944,6 +971,7 @@ class CloudformationStackSet(object):
             )
             self.wait_pending_operations()
 
+    @retry_pending
     def delete_stackset(self) -> None:
         c = s.client('cloudformation')
         log.info(f'Deleting stackset {self.stack_name}...')
@@ -953,13 +981,13 @@ class CloudformationStackSet(object):
         if self.existing_stack is None:
             log.info(f'StackSet {self.stack_name} does not exist. Skipping.')
             return
-        self.wait_pending_operations()
         self.wipe_out_stackset_instances()
         self.delete_stackset()
 
     def wait_pending_operations(self) -> None:
         c = s.client('cloudformation')
         try:
+            time.sleep(1)
             while True:
                 r = c.list_stack_set_operations(StackSetName=self.stack_name, MaxResults=10)
                 if len([xo for xo in r['Summaries'] if xo['Status'] in ['RUNNING', 'STOPPING']]) > 0:
@@ -1016,7 +1044,7 @@ class CloudformationEnvironment(object):
 
     def deploy_stacks(self):
         for xs in self.stacks:
-            log_section(f'Deploying stack {xs.stack_name}')
+            log_section(f'Deploying {xs.template.template_type} {xs.stack_name}')
             p = StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
             xs.set_parameters(p)
             xs.deploy()
@@ -1194,6 +1222,7 @@ class StackDeployer(object):
         except Exception as e:
             log.exception(str(e), exc_info=self.o.verbose)
             log.error('Aborting deployment')
+            sys.exit(8)
 
 
 if __name__ == '__main__':
