@@ -551,10 +551,10 @@ class StackParameters(object):
     def compute_parameter_value(self, param_name):
         common_val = self.common_parameters.get(param_name)
         specific_val = self.specific_parameters.get(param_name)
-        log.debug(f'Parameter {param_name}: common [{common_val}] - specific [{specific_val}]')
-        for xv in (self.get_special_parameter_value(param_name), specific_val, common_val):
-            if xv is not None:
-                return xv
+        for source, xv in (('BUILTIN', self.get_special_parameter_value(param_name)),
+                ('SPECIFIC', specific_val), ('COMMON', common_val), ('ABSENT', None)):
+            if xv is not None or source == 'ABSENT':
+                return source, xv
 
     def get_special_parameter_value(self, param_name):
         if param_name == 'ProductName':
@@ -573,10 +573,12 @@ class StackParameters(object):
             return self.aws_org_arn
 
     def parse_parameters(self):
-        p = {k: self.compute_parameter_value(k) for k in self.template.template_body.parameters.keys()}
-        for k, v in p.items():
-            log.info('{key:>30} ... [{value}]'.format(key=k,
+        p = dict()
+        for k in self.template.template_body.parameters.keys():
+            source, v = self.compute_parameter_value(k)
+            log.info('{key:>30} ... ({source:^10}) [{value}]'.format(key=k, source=source,
                 value=f'{Fore.CYAN}>> EMPTY <<{Style.RESET_ALL}' if v is None else f'{Fore.GREEN}{v}{Style.RESET_ALL}'))
+            p[k] = v
         return p
 
     def format_parameters(self):
