@@ -17,7 +17,7 @@ import logging
 from functools import wraps
 from colorama import init as init_colorama, Fore, Style
 from string import Template
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, WaiterError
 
 log = logging.getLogger('deploy-stack')
 
@@ -741,10 +741,9 @@ class CloudformationStack(object):
         waiter = c.get_waiter(event)
         try:
             waiter.wait(StackName=self.stack_name)
-        except Exception:
-            r = s.resource('cloudformation')
-            self.stack = r.Stack(self.stack_name)
-            raise DeploymentFailed(f'Operation failed: {self.stack.stack_status_reason}') from None
+        except Exception as e:
+            self.retrieve()
+            raise DeploymentFailed(f'Stack {self.stack_name} deployment failed: {str(e)}') from None
 
     def retrieve(self) -> None:
         r = s.resource('cloudformation')
@@ -900,6 +899,27 @@ class CloudformationStackSet(object):
         c.delete_stack_instances(**params)
         self.wait_pending_operations()
 
+    def stackset_instance_need_update(self, account_id, region):
+        c = s.client('cloudformation')
+        r = c.describe_stack_instance(
+            StackSetName=self.stack_name,
+            StackInstanceAccount=account_id,
+            StackInstanceRegion=region
+        )
+        new_overrides = self.stack_parameters.format_stackset_overrides(account_id)
+        current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
+            for xo in r['StackInstance']['ParameterOverrides']]
+        if sorted(current_overrides, key=lambda x: x['ParameterKey']) != \
+                sorted(new_overrides, key=lambda x: x['ParameterKey']):
+            log.info('Parameter overrides are changing in account '
+                f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
+            return True
+        if r['StackInstance']['Status'] != 'CURRENT':
+            log.info('Stackset instance is not CURRENT in account '
+                f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
+            return True
+        return False
+
     @retry_pending
     def rollout_account(self, account_info: Dict[str, Any]) -> None:
         c = s.client('cloudformation')
@@ -937,15 +957,7 @@ class CloudformationStackSet(object):
             )
             self.wait_pending_operations()
         if len(update_regions) > 0:
-            r = c.describe_stack_instance(
-                StackSetName=self.stack_name,
-                StackInstanceAccount=account_info['account'],
-                StackInstanceRegion=list(update_regions).pop()
-            )
-            current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
-                for xo in r['StackInstance']['ParameterOverrides']]
-            if sorted(current_overrides, key=lambda x: x['ParameterKey']) != \
-                    sorted(overrides, key=lambda x: x['ParameterKey']):
+            if self.stackset_instance_need_update(account_info['account'], update_regions.pop()):
                 log.info(f'Updating stack instances in regions {update_regions}...')
                 c.update_stack_instances(
                     StackSetName=self.stack_name,
