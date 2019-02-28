@@ -1,0 +1,14 @@
+FROM alpine:3.8
+
+VOLUME /root/.aws
+VOLUME /app
+
+RUN apk add --update python3 alpine-sdk nodejs nodejs-npm zip
+
+COPY ./scripts/requirements.txt /
+
+RUN pip3 install --upgrade pip && pip3 install -r /requirements.txt
+
+WORKDIR /app
+
+ENTRYPOINT [ "python3", "./scripts/deploy_stack.py" ]
