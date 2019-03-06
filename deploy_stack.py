@@ -1162,6 +1162,7 @@ class StackDeployer(object):
 
     def set_bucket(self):
         r = s.resource('s3')
+        c = s.client('s3')
         b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
         v = r.BucketVersioning(b.name)
         log.info(f'Creating S3 bucket {Fore.GREEN}{b.name}{Style.RESET_ALL}...')
@@ -1171,6 +1172,12 @@ class StackDeployer(object):
         except ClientError as e:
             if e.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
                 log.info(f'Bucket {Fore.GREEN}{b.name}{Style.RESET_ALL} exists, reusing')
+        c.put_bucket_encryption(
+            Bucket=b.name,
+            ServerSideEncryptionConfiguration={
+                'Rules': [{'ApplyServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}},]
+            }
+        )
         return b
 
     def delete_bucket(self):
