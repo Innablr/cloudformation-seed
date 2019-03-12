@@ -4,7 +4,7 @@ Cloudformation Seed
 Preface
 ------
 
-This is a GIT submodule that helps you deploy your Cloudformation project without hassle:
+This is a script that will help you deploy your Cloudformation project without hassle:
 
 * Handle Cloudformation deployments of any scale
 * Allow to do multiple deployments of the same code with a different installation name

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import argparse
 import logging
+import itertools
 from functools import wraps
 from colorama import init as init_colorama, Fore, Style
 from string import Template
@@ -428,10 +429,11 @@ class StackParameters(object):
         self.STACK_OUTPUT_RE = \
             re.compile('^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
 
-        self.environment_parameters = self.read_parameters_yaml(
-                                            os.path.join(self.parameters_dir,
-                                            f'{self.runtime_environment}.yaml')
-                                        ) or dict()
+        self.environment_parameters = \
+            self.read_parameters_yaml(
+                os.path.join(self.parameters_dir,
+                f'{self.runtime_environment}.yaml')
+            )
         self.common_parameters = self.environment_parameters.get('common-parameters', dict())
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
@@ -443,7 +445,16 @@ class StackParameters(object):
         self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
         self.operation_preferences: Dict[str, Union[str, List[str]]] = \
                 self.stack_definition.get('operation_preferences', {})
-        self.rollout = self.stack_definition.get('rollout', list())
+        self.rollout = self.format_rollout()
+
+    def format_rollout(self):
+        c = s.client('cloudformation')
+        rollout = self.stack_definition.get('rollout', list())
+        for xr in rollout:
+            xr['regions'] = set(xr.get('regions', {c.meta.region_name}))
+            xr['override'] = [{'ParameterKey': k, 'ParameterValue': str(v)}
+                for k, v in xr.get('override', dict()).items() if v is not None]
+        return rollout
 
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):
@@ -584,17 +595,6 @@ class StackParameters(object):
 
     def format_parameters(self):
         return [{'ParameterKey': k, 'ParameterValue': str(v)} for k, v in self.parameters.items() if v is not None]
-
-    def format_stackset_overrides(self, account_id):
-        if self.template.template_type != 'stackset':
-            raise RuntimeError('Parameter overrides only work for stacksets')
-        for xa in self.rollout:
-            if xa['account'] == account_id:
-                if 'override' in xa:
-                    return [{'ParameterKey': k, 'ParameterValue': str(v)}
-                                for k, v in xa['override'].items() if v is not None]
-                return []
-        raise RuntimeError(f'Stackset is not rolling out to account {account_id}')
 
     def format_role_pair(self) -> Dict[str, str]:
         if self.template.template_type != 'stackset':
@@ -752,6 +752,176 @@ class CloudformationStack(object):
             f'in status {Fore.MAGENTA}{self.stack.stack_status}{Style.RESET_ALL}')
 
 
+class StackSetRollout:
+    def __init__(self, stack_name, rollout_config):
+        self.stack_name = stack_name
+        self.rollout_config = rollout_config
+        self.stack_instances = None
+        self.create = list()
+        self.update = list()
+        self.delete = list()
+
+    def retrieve(self) -> None:
+        c = s.client('cloudformation')
+        log.info('Loading stack instances...')
+        r = c.list_stack_instances(StackSetName=self.stack_name)
+        self.stack_instances = dict()
+        for xi in r['Summaries']:
+            self.stack_instances.setdefault(xi['Account'], set()).add(xi['Region'])
+        log.info(f'Found {Fore.GREEN}{sum(len(xv) for xv in self.stack_instances.values())}{Style.RESET_ALL} '
+            f'stack instances in {Fore.MAGENTA}{len(self.stack_instances)}{Style.RESET_ALL} accounts')
+        self.collate_stack_instances()
+
+    def clear_rollout(self) -> None:
+        self.create.clear()
+        self.update.clear()
+        self.delete.clear()
+
+    def find_or_add_account(self, where, account):
+        coll = self.create if where == 'create' else self.update
+        matches = [xa for xa in coll if xa['account'] == account['account'] and xa['override'] == account['override']]
+        try:
+            return matches[0]
+        except IndexError:
+            new_account = copy.copy(account)
+            new_account['regions'] = set()
+            coll.append(new_account)
+            return new_account
+
+    def region_need_update(self, account_id, region, overrides):
+        c = s.client('cloudformation')
+        r = c.describe_stack_instance(
+            StackSetName=self.stack_name,
+            StackInstanceAccount=account_id,
+            StackInstanceRegion=region
+        )
+        current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
+            for xo in r['StackInstance']['ParameterOverrides']]
+        if sorted(current_overrides, key=lambda x: x['ParameterKey']) != \
+                sorted(overrides, key=lambda x: x['ParameterKey']):
+            log.info('Parameter overrides are changing in account '
+                f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
+            return True
+        if r['StackInstance']['Status'] != 'CURRENT':
+            log.info('Stackset instance is not CURRENT in account '
+                f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
+            return True
+        return False
+
+    def set_create_or_update_account(self, account) -> None:
+        account_id = account['account']
+        if account_id not in self.stack_instances and len(account['regions']) > 0:
+            log.debug(f'Stackset will create instances in account '
+                f'{Fore.GREEN}{account_id}{Style.RESET_ALL} regions '
+                f'{Fore.GREEN}{account["regions"]}{Style.RESET_ALL}')
+            self.create.append(copy.copy(account))
+            return
+        for region in account['regions']:
+            if region in self.stack_instances[account_id]:
+                if not self.region_need_update(account_id, region, account['override']):
+                    log.info(f'Stack instance in account '
+                        f'{Fore.GREEN}{account_id}{Style.RESET_ALL} '
+                        f'region {Fore.GREEN}{region}{Style.RESET_ALL} is not updating')
+                    continue
+                log.debug(f'Stackset will update instance in account {account_id} region {region}')
+                rollout_account = self.find_or_add_account('update', account)
+            else:
+                log.debug(f'Stackset will create instance in account {account_id} region {region}')
+                rollout_account = self.find_or_add_account('create', account)
+            rollout_account['regions'].add(region)
+
+    def set_delete_account(self, account, regions) -> None:
+        rollout_accounts = [xa for xa in self.rollout_config if xa['account'] == account]
+        rollout_regions = set.union(*[xa['regions'] for xa in rollout_accounts])
+        delete_regions = regions - rollout_regions
+        if len(delete_regions) > 0:
+            log.debug(f'Account {account} is set for deletion in regions {delete_regions}')
+            self.delete.append({
+                'account': account,
+                'regions': delete_regions,
+                'override': dict()
+            })
+
+    def collate_stack_instances(self):
+        self.clear_rollout()
+        for rollout_account in self.rollout_config:
+            self.set_create_or_update_account(rollout_account)
+        for account, regions in self.stack_instances.items():
+            self.set_delete_account(account, regions)
+
+    def calculate_overrides_checksum(self, account):
+        if len(account['override']) == 0:
+            return '-'
+        sha1sum = hashlib.sha1()
+        for item in sorted(account['override'],
+                key=lambda x: '{ParameterKey}-{ParameterValue}'.format_map(x)):
+            sha1sum.update(bytes(repr(item), 'utf-8'))
+        return sha1sum.hexdigest()
+
+    def rank_sets(self, a):
+        ranking = list()
+        for i in range(len(a), 1, -1):
+            for subset in itertools.combinations(sorted(a), i):
+                intersected = set.intersection(*(a[k] for k in subset))
+                if len(intersected) > 0:
+                    if intersected not in ranking:
+                        ranking.append(intersected)
+                else:
+                    for k in subset:
+                        if a[k] not in ranking:
+                            ranking.append(a[k])
+        return sorted(ranking, reverse=True, key=lambda x: len(x))
+
+    def compute_deployment(self, initial, xset):
+        new = dict()
+        deployment = {
+            'accounts': list(),
+            'regions': xset
+        }
+        for account, regions in initial.items():
+            if regions >= xset:
+                deployment['accounts'].append(account)
+                if len(regions - xset) > 0:
+                    new[account] = regions - xset
+            else:
+                new[account] = regions
+        return deployment, new
+
+    def generate_deployments(self, rollout):
+        while len(rollout) > 1:
+            costed_sets = []
+            for xs in self.rank_sets(rollout):
+                if len(xs) > 0:
+                    d, r0 = self.compute_deployment(rollout, xs)
+                    cost = sum(1 for _ in self.generate_deployments(r0))
+                    costed_sets.append((cost, xs))
+            winner = sorted(costed_sets, key=lambda x: x[0])[0]
+            d, rollout = self.compute_deployment(rollout, winner[1])
+            yield d
+        for account, regions in rollout.items():
+            yield {
+                'accounts': [account],
+                'regions': regions
+            }
+
+    def grouped_rollout(self, coll):
+        deployments = list()
+        for _, group in itertools.groupby(sorted(coll, key=self.calculate_overrides_checksum),
+                self.calculate_overrides_checksum):
+            group_list = list(group)
+            deployment = {
+                'override': group_list[0]['override'],
+                'accounts': list()
+            }
+            deployment_accounts = dict()
+            for xd in group_list:
+                deployment_accounts.setdefault(xd['account'], set()).update(xd['regions'])
+            for xd in self.generate_deployments(deployment_accounts):
+                deployment['accounts'].append(xd)
+            deployments.append(deployment)
+        return deployments
+
+
 class CloudformationStackSet(object):
     def __init__(self, installation_name: str, template: CloudformationTemplate) -> None:
         self.template: CloudformationTemplate = template
@@ -760,6 +930,7 @@ class CloudformationStackSet(object):
         self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
+        self.stackset_rollout = None
 
     def retry_pending(f):
         @wraps(f)
@@ -778,6 +949,20 @@ class CloudformationStackSet(object):
 
     def set_parameters(self, parameters: StackParameters) -> None:
         self.stack_parameters = parameters
+        self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
+        self.retrieve()
+
+    def retrieve(self) -> None:
+        c = s.client('cloudformation')
+        log.info('Loading stackset...')
+        try:
+            r = c.describe_stack_set(StackSetName=self.stack_name)
+            self.stack = r['StackSet']
+            log.info(f'Found stackset {Fore.GREEN}{self.stack["StackSetName"]}{Style.RESET_ALL} '
+                f'in status {Fore.MAGENTA}{self.stack["Status"]}{Style.RESET_ALL}')
+            self.stackset_rollout.retrieve()
+        except Exception:
+            log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
@@ -856,132 +1041,83 @@ class CloudformationStackSet(object):
         c.update_stack_set(**params)
         self.wait_pending_operations()
 
-    def retrieve(self) -> None:
-        c = s.client('cloudformation')
-        r = c.describe_stack_set(StackSetName=self.stack_name)
-        self.stack = r['StackSet']
-        log.info(f'Found stackset {Fore.GREEN}{self.stack["StackSetName"]}{Style.RESET_ALL} '
-            f'in status {Fore.MAGENTA}{self.stack["Status"]}{Style.RESET_ALL}')
-
     def deploy(self) -> None:
         if self.existing_stack is None:
             self.create_stackset()
         else:
-            for xa in self.stack_parameters.rollout:
-                log.info(f'Cleanup account {xa["account"]}...')
-                self.cleanup_stack_instances(xa)
+            self.cleanup_stack_instances()
             self.update_stackset()
         self.retrieve()
-        for xa in self.stack_parameters.rollout:
-            self.rollout_account(xa)
+        self.rollout_accounts()
 
     @retry_pending
-    def cleanup_stack_instances(self, account_info: Dict[str, Any]) -> None:
+    def cleanup_stack_instances(self) -> None:
         c = s.client('cloudformation')
-        regions = account_info.get('regions', [c.meta.region_name])
-        i = c.list_stack_instances(
-            StackSetName=self.stack_name,
-            StackInstanceAccount=account_info['account']
-        )
-        existing_regions = {xi['Region'] for xi in i['Summaries']}
-        delete_regions = existing_regions - set(regions)
-        if not len(delete_regions) > 0:
-            return
-        log.info(f'Cleaning up stack instances for account {account_info["account"]} '
-                    f'in regions {delete_regions}...')
-        params = {
-            'StackSetName': self.stack_name,
-            'Accounts': [account_info['account']],
-            'Regions': list(delete_regions),
-            'RetainStacks': False
-        }
-        params.update(self.stack_parameters.format_operation_preferences())
-        c.delete_stack_instances(**params)
-        self.wait_pending_operations()
-
-    def regions_need_update(self, account_id, regions):
-        c = s.client('cloudformation')
-        regions_need_update = set()
-        for region in regions:
-            r = c.describe_stack_instance(
-                StackSetName=self.stack_name,
-                StackInstanceAccount=account_id,
-                StackInstanceRegion=region
-            )
-            new_overrides = self.stack_parameters.format_stackset_overrides(account_id)
-            current_overrides = [{'ParameterKey': xo['ParameterKey'], 'ParameterValue': xo['ParameterValue']}
-                for xo in r['StackInstance']['ParameterOverrides']]
-            if sorted(current_overrides, key=lambda x: x['ParameterKey']) != \
-                    sorted(new_overrides, key=lambda x: x['ParameterKey']):
-                log.info('Parameter overrides are changing in account '
-                    f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
-                regions_need_update.add(region)
-            if r['StackInstance']['Status'] != 'CURRENT':
-                log.info('Stackset instance is not CURRENT in account '
-                    f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
-                regions_need_update.add(region)
-        return regions_need_update
+        delete_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.delete)
+        log.debug(f'Delete instances: {delete_groups}')
+        for xg in delete_groups:
+            for xd in xg['accounts']:
+                log.info(f'Deleting stack instances for accounts {xd["accounts"]} '
+                    f'in regions {xd["regions"]}...')
+                params = {
+                    'StackSetName': self.stack_name,
+                    'Accounts': xd["accounts"],
+                    'Regions': list(xd["regions"]),
+                    'RetainStacks': False
+                }
+                params.update(self.stack_parameters.format_operation_preferences())
+                c.delete_stack_instances(**params)
+                self.wait_pending_operations()
 
     @retry_pending
-    def rollout_account(self, account_info: Dict[str, Any]) -> None:
+    def rollout_accounts(self) -> None:
         c = s.client('cloudformation')
-        log.info(f'Rolling out stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} to '
-            f'account {Fore.GREEN}{account_info["account"]}{Style.RESET_ALL}...')
-        overrides = self.stack_parameters.format_stackset_overrides(account_info['account'])
-        regions = account_info.get('regions', [c.meta.region_name])
-        log_section(f'Parameter overrides for {account_info["account"]}')
-        if len(overrides) == 0:
-            log.info('Reset parameter overrides')
-        for xo in overrides:
-            log.info(f'{xo["ParameterKey"]:>30} ... [{Fore.GREEN}{xo["ParameterValue"]}{Style.RESET_ALL}]')
-        log_section('-')
-        i = c.list_stack_instances(
-            StackSetName=self.stack_name,
-            StackInstanceAccount=account_info['account']
-        )
-        existing_regions = {xi['Region'] for xi in i['Summaries']}
-        create_regions = set(regions) - existing_regions
-        update_regions = self.regions_need_update(account_info['account'], set(regions) & existing_regions)
-        delete_regions = existing_regions - set(regions)
-        if len(delete_regions) > 0:
-            log.info(f'Deleting stack instances in regions {delete_regions}...')
-            c.delete_stack_instances(
-                StackSetName=self.stack_name,
-                Accounts=[account_info['account']],
-                Regions=list(delete_regions),
-                RetainStacks=False
-            )
-            self.wait_pending_operations()
-        if len(create_regions) > 0:
-            log.info(f'Creating new stack instances in regions {create_regions}...')
-            c.create_stack_instances(
-                StackSetName=self.stack_name,
-                Accounts=[account_info['account']],
-                Regions=list(create_regions),
-                ParameterOverrides=overrides
-            )
-            self.wait_pending_operations()
-        if len(update_regions) > 0:
-            log.info(f'Updating stack instances in regions {update_regions}...')
-            c.update_stack_instances(
-                StackSetName=self.stack_name,
-                Accounts=[account_info['account']],
-                Regions=list(update_regions),
-                ParameterOverrides=overrides
-            )
-            self.wait_pending_operations()
+        create_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.create)
+        update_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.update)
+        log.debug(f'Update instances: {update_groups}')
+        log.debug(f'Create instances: {create_groups}')
+        for xg in create_groups:
+            for xd in xg['accounts']:
+                log.info(f'Creating new stack instances for accounts {xd["accounts"]} '
+                    f'in regions {xd["regions"]}...')
+                params = {
+                    'StackSetName': self.stack_name,
+                    'Accounts': xd["accounts"],
+                    'Regions': list(xd["regions"]),
+                    'ParameterOverrides': xg['override']
+                }
+                params.update(self.stack_parameters.format_operation_preferences())
+                c.create_stack_instances(**params)
+                self.wait_pending_operations()
+        for xg in update_groups:
+            for xd in xg['accounts']:
+                log.info(f'Updating stack instances for accounts {xd["accounts"]} '
+                    f'in regions {xd["regions"]}...')
+                params = {
+                    'StackSetName': self.stack_name,
+                    'Accounts': xd["accounts"],
+                    'Regions': list(xd["regions"]),
+                    'ParameterOverrides': xg['override']
+                }
+                params.update(self.stack_parameters.format_operation_preferences())
+                c.update_stack_instances(**params)
+                self.wait_pending_operations()
 
     @retry_pending
     def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
-        for xi in i['Summaries']:
-            log.info(f'Deleting stack instance in account {xi["Account"]} region {xi["Region"]}...')
+        for account, group in itertools.groupby(sorted(i['Summaries'], key=lambda x: x['Account']), lambda x: x['Account']):
+            regions = [xg['Region'] for xg in group]
+            log.info(f'Deleting stack instance in account {account} regions {regions}...')
             c.delete_stack_instances(
                 StackSetName=self.stack_name,
-                Accounts=[xi['Account']],
-                Regions=[xi['Region']],
-                RetainStacks=False
+                Accounts=[account],
+                Regions=regions,
+                RetainStacks=False,
+                OperationPreferences={
+                    'MaxConcurrentPercentage': 100
+                }
             )
             self.wait_pending_operations()
 
@@ -1122,7 +1258,7 @@ class StackDeployer(object):
     def __init__(self):
         self.o = self.configure_args()
         self.setup_logging()
-        log.info(f'{Fore.CYAN} >> Cloudformation Ops Seed >> '
+        log.info(f'{Fore.CYAN} >> Cloudformation Seed >> '
             f'Orchestrates large Cloudformation deployments >> {Style.RESET_ALL}')
         log.info(' '.join(sys.argv))
         try:
@@ -1244,8 +1380,3 @@ class StackDeployer(object):
             log.exception(str(e), exc_info=self.o.verbose)
             log.error('Aborting deployment')
             sys.exit(8)
-
-
-if __name__ == '__main__':
-    d = StackDeployer()
-    d.run()
