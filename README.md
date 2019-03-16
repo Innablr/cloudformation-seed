@@ -24,7 +24,7 @@ It will:
 Requirements
 ------
 
-You need a Mac or a Linux machine/VM to run the Seed. Windows is not supported, sorry.
+You need a Mac or a Linux machine/VM to run the Seed. Windows is not supported, but it may work on Windows too if you really want it to.
 
 You need to have Docker on the workstation.
 
@@ -59,38 +59,18 @@ Quick start
 
 ### First things first:
 
-1. Create a new directory for your project and do `git init` inside it
-2. Do `git submodule add git@bitbucket.org:innablr/cloudformation-ops-seed.git scripts`
-3. Copy everything from the `scripts/examples` directory to the root of the project
-4. Copy `scripts/Makefile.particulars.moveup` to the root of the project and rename it to `Makefile.particulars`
-5. Edit the project name in `Makefile.particulars`
-6. Edit `parameters/dev.yaml` to your needs
-7. Add more stuff under the `cloudformation` directory and include it in `parameters/dev.yaml`
+1. Create a new directory for your project
+2. Copy everything from the `examples` directory to the root of the project
+3. Edit `parameters/dev.yaml` to your needs
+4. Add more stuff under the `cloudformation` directory and include it in `parameters/dev.yaml`
 
 ### Finally:
 
-Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment. Do `INSTALLATION_NAME=x0 RUNTIME_ENVIRONMENT=dev R53_DOMAIN=innablr-dev.lan make -f scripts/Makefile deploy`
+Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment. Run `cloudformation-seed -c my-project -i x0 -e dev -d my.domain.cld deploy`
 
 ### Optionally:
 
-Put the following content in `Makefile` in the root of your project:
-
-```
-MY_INSTALLATION_NAME ?= x0
-
-MY_R53_DOMAIN := innablr-dev.lan
-
-help:
-	@echo "Here will be help"
-
-my_project:
-	INSTALLATION_NAME=$(MY_INSTALLATION_NAME) \
-	RUNTIME_ENVIRONMENT=dev \
-	R53_DOMAIN=$(MY_R53_DOMAIN) \
-	make -f scripts/Makefile deploy
-```
-
-then execute `make my_project`
+Take the dockerfiles and makefiles from the `examples` directory and massage them around to suit your needs.
 
 Deep dive
 ------
