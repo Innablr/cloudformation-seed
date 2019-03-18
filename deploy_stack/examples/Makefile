@@ -32,7 +32,7 @@ endif
 
 build:
 	docker build \
-		--tag $(IMAGE_NAME) \
+        --tag $(IMAGE_NAME) \
 		--file scripts/$(DOCKERFILE) .
 
 deploy: build

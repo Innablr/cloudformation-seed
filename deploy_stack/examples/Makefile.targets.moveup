@@ -1,5 +1,0 @@
-deploy_service0: build
-	docker run \
-		-v ~/.aws:/root/.aws \
-		$(ENVS) -t --rm \
-		$(IMAGE_NAME) -i x0 -e prod -d prod.wowaccount.cld --cap-iam --cap-named-iam deploy

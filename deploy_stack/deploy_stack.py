@@ -449,7 +449,9 @@ class StackParameters(object):
 
     def format_rollout(self):
         c = s.client('cloudformation')
-        rollout = self.stack_definition.get('rollout', list())
+        if 'rollout' not in self.stack_definition:
+            return None
+        rollout = self.stack_definition['rollout']
         for xr in rollout:
             xr['regions'] = set(xr.get('regions', {c.meta.region_name}))
             xr['override'] = [{'ParameterKey': k, 'ParameterValue': str(v)}
@@ -770,12 +772,6 @@ class StackSetRollout:
             self.stack_instances.setdefault(xi['Account'], set()).add(xi['Region'])
         log.info(f'Found {Fore.GREEN}{sum(len(xv) for xv in self.stack_instances.values())}{Style.RESET_ALL} '
             f'stack instances in {Fore.MAGENTA}{len(self.stack_instances)}{Style.RESET_ALL} accounts')
-        self.collate_stack_instances()
-
-    def clear_rollout(self) -> None:
-        self.create.clear()
-        self.update.clear()
-        self.delete.clear()
 
     def find_or_add_account(self, where, account):
         coll = self.create if where == 'create' else self.update
@@ -832,7 +828,7 @@ class StackSetRollout:
 
     def set_delete_account(self, account, regions) -> None:
         rollout_accounts = [xa for xa in self.rollout_config if xa['account'] == account]
-        rollout_regions = set.union(*[xa['regions'] for xa in rollout_accounts])
+        rollout_regions = set.union(*[xa['regions'] for xa in rollout_accounts]) if len(rollout_accounts) > 0 else set()
         delete_regions = regions - rollout_regions
         if len(delete_regions) > 0:
             log.debug(f'Account {account} is set for deletion in regions {delete_regions}')
@@ -842,10 +838,16 @@ class StackSetRollout:
                 'override': dict()
             })
 
-    def collate_stack_instances(self):
-        self.clear_rollout()
+    def collate_instances_create_update(self):
+        self.create.clear()
+        self.update.clear()
+        self.retrieve()
         for rollout_account in self.rollout_config:
             self.set_create_or_update_account(rollout_account)
+
+    def collate_instances_delete(self):
+        self.delete.clear()
+        self.retrieve()
         for account, regions in self.stack_instances.items():
             self.set_delete_account(account, regions)
 
@@ -921,6 +923,14 @@ class StackSetRollout:
             deployments.append(deployment)
         return deployments
 
+    def rollout_delete(self):
+        self.collate_instances_delete()
+        return self.grouped_rollout(self.delete)
+
+    def rollout_create_update(self):
+        self.collate_instances_create_update()
+        return self.grouped_rollout(self.create), self.grouped_rollout(self.update)
+
 
 class CloudformationStackSet(object):
     def __init__(self, installation_name: str, template: CloudformationTemplate) -> None:
@@ -930,7 +940,7 @@ class CloudformationStackSet(object):
         self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
-        self.stackset_rollout = None
+        self.stackset_rollout: Optional[StackSetRollout] = None
 
     def retry_pending(f):
         @wraps(f)
@@ -949,27 +959,17 @@ class CloudformationStackSet(object):
 
     def set_parameters(self, parameters: StackParameters) -> None:
         self.stack_parameters = parameters
-        self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
-        self.retrieve()
-
-    def retrieve(self) -> None:
-        c = s.client('cloudformation')
-        log.info('Loading stackset...')
-        try:
-            r = c.describe_stack_set(StackSetName=self.stack_name)
-            self.stack = r['StackSet']
-            log.info(f'Found stackset {Fore.GREEN}{self.stack["StackSetName"]}{Style.RESET_ALL} '
-                f'in status {Fore.MAGENTA}{self.stack["Status"]}{Style.RESET_ALL}')
-            self.stackset_rollout.retrieve()
-        except Exception:
-            log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
+        if self.stack_parameters.rollout is not None:
+            self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = s.client('cloudformation')
         try:
             r = c.describe_stack_set(StackSetName=self.stack_name)
-            log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} exists')
-            return r['StackSet']
+            stackset = r['StackSet']
+            log.info(f'Found stackset {Fore.GREEN}{stackset["StackSetName"]}{Style.RESET_ALL} '
+                f'in status {Fore.MAGENTA}{stackset["Status"]}{Style.RESET_ALL}')
+            return stackset
         except Exception:
             log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
             return None
@@ -1047,13 +1047,16 @@ class CloudformationStackSet(object):
         else:
             self.cleanup_stack_instances()
             self.update_stackset()
-        self.retrieve()
+        self.stack = self.find_existing_stackset()
         self.rollout_accounts()
 
     @retry_pending
     def cleanup_stack_instances(self) -> None:
         c = s.client('cloudformation')
-        delete_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.delete)
+        if self.stackset_rollout is None:
+            log.info('Rollout configuration is missing, not cleaning up stack instances')
+            return
+        delete_groups = self.stackset_rollout.rollout_delete()
         log.debug(f'Delete instances: {delete_groups}')
         for xg in delete_groups:
             for xd in xg['accounts']:
@@ -1072,8 +1075,10 @@ class CloudformationStackSet(object):
     @retry_pending
     def rollout_accounts(self) -> None:
         c = s.client('cloudformation')
-        create_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.create)
-        update_groups = self.stackset_rollout.grouped_rollout(self.stackset_rollout.update)
+        if self.stackset_rollout is None:
+            log.info('Rollout configuration is missing, not deploying stack instances')
+            return
+        create_groups, update_groups = self.stackset_rollout.rollout_create_update()
         log.debug(f'Update instances: {update_groups}')
         log.debug(f'Create instances: {create_groups}')
         for xg in create_groups:
@@ -1107,7 +1112,8 @@ class CloudformationStackSet(object):
     def wipe_out_stackset_instances(self) -> None:
         c = s.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
-        for account, group in itertools.groupby(sorted(i['Summaries'], key=lambda x: x['Account']), lambda x: x['Account']):
+        for account, group in itertools.groupby(sorted(i['Summaries'],
+                key=lambda x: x['Account']), lambda x: x['Account']):
             regions = [xg['Region'] for xg in group]
             log.info(f'Deleting stack instance in account {account} regions {regions}...')
             c.delete_stack_instances(
@@ -1313,7 +1319,7 @@ class StackDeployer(object):
         c.put_bucket_encryption(
             Bucket=b.name,
             ServerSideEncryptionConfiguration={
-                'Rules': [{'ApplyServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}},]
+                'Rules': [{'ApplyServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}}]
             }
         )
         return b
