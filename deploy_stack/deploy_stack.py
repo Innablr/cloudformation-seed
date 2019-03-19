@@ -62,7 +62,7 @@ class DeploymentFailed(Exception): pass             # noqa E701,E302
 class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
-ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:organization/(?P<org_id>o-\w+$)')
+ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
 
 
 class DirectoryScanner(object):
