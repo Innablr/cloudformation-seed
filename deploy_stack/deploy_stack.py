@@ -799,7 +799,7 @@ class StackSetRollout:
                 f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
             return True
         if r['StackInstance']['Status'] != 'CURRENT':
-            log.info('Stackset instance is not CURRENT in account '
+            log.info(f'Stackset instance is {Fore.MAGENTA}NOT CURRENT{Style.RESET_ALL} in account '
                 f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
             return True
         return False
