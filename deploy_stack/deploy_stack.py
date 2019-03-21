@@ -62,7 +62,7 @@ class DeploymentFailed(Exception): pass             # noqa E701,E302
 class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
-ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:organization/(?P<org_id>o-\w+$)')
+ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
 
 
 class DirectoryScanner(object):
@@ -565,8 +565,8 @@ class StackParameters(object):
     def compute_parameter_value(self, param_name):
         common_val = self.common_parameters.get(param_name)
         specific_val = self.specific_parameters.get(param_name)
-        for source, xv in (('BUILTIN', self.get_special_parameter_value(param_name)),
-                ('SPECIFIC', specific_val), ('COMMON', common_val), ('ABSENT', None)):
+        for source, xv in (('SPECIFIC', specific_val), ('COMMON', common_val),
+                ('BUILTIN', self.get_special_parameter_value(param_name)), ('ABSENT', None)):
             if xv is not None or source == 'ABSENT':
                 return source, xv
 
@@ -799,7 +799,7 @@ class StackSetRollout:
                 f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
             return True
         if r['StackInstance']['Status'] != 'CURRENT':
-            log.info('Stackset instance is not CURRENT in account '
+            log.info(f'Stackset instance is {Fore.MAGENTA}NOT CURRENT{Style.RESET_ALL} in account '
                 f'{Fore.GREEN}{account_id}{Style.RESET_ALL} in region {region}')
             return True
         return False
