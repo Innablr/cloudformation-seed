@@ -62,7 +62,7 @@ class DeploymentFailed(Exception): pass             # noqa E701,E302
 class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
-ORG_ARN_RE = re.compile('^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
+ORG_ARN_RE = re.compile(r'^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
 
 
 class DirectoryScanner(object):
@@ -427,7 +427,7 @@ class StackParameters(object):
 
         self.parameters_loader = self.configure_parameters_loader()
         self.STACK_OUTPUT_RE = \
-            re.compile('^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
+            re.compile(r'^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
 
         self.environment_parameters = \
             self.read_parameters_yaml(
