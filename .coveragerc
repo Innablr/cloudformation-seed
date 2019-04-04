@@ -1,0 +1,2 @@
+[run]
+omit = /usr/*, deploy_stack/__init__.py, test_rollout.py, test/*
