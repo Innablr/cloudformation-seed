@@ -1310,12 +1310,22 @@ class StackDeployer(object):
         b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
         v = r.BucketVersioning(b.name)
         log.info(f'Creating S3 bucket {Fore.GREEN}{b.name}{Style.RESET_ALL}...')
+
+        bucket_create_kwargs = {
+          'ACL': 'private',
+        }
+        if (s.region_name != 'us-east-1'):
+            bucket_create_kwargs['CreateBucketConfiguration'] = {'LocationConstraint': s.region_name}
+
         try:
-            b.create(ACL='private', CreateBucketConfiguration={'LocationConstraint': s.region_name})
+            b.create(**bucket_create_kwargs)
             v.enable()
         except ClientError as e:
             if e.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
                 log.info(f'Bucket {Fore.GREEN}{b.name}{Style.RESET_ALL} exists, reusing')
+            else:
+                log.warning(f'Bucket {Fore.GREEN}{b.name}{Style.RESET_ALL} creation failed!')
+
         c.put_bucket_encryption(
             Bucket=b.name,
             ServerSideEncryptionConfiguration={
