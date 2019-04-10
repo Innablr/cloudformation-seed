@@ -8,6 +8,9 @@ matrix:
       dist: xenial
       python: 3.7
 
+before_install:
+  - export BOTO_CONFIG=/dev/null
+
 install:
   - pip install -r requirements.txt
 
