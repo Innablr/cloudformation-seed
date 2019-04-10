@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Governance Stack (CloudTrail, Config)
+
+Parameters:
+  TemplatesS3Bucket:
+    Type: String
+    Description: S3 Bucket with the components templates
+  InstallationName:
+    Type: String
+    Description: Unique stack installation name
+  LoggingAccountId:
+    Type: String
+    Description: Account ID authorized to aggregate CloudTrail logs.
+  CloudTrailS3Bucket:
+    Type: String
+    Description: Centralized S3 bucket to store CloudTrail logs
+    Default: ''
+  ConfigS3Bucket:
+    Type: String
+    Description: Centralized S3 bucket to store AWS Config logs
+    Default: ''
+  ConfigTopicArn:
+    Type: String
+    Description: The Amazon Resource Name (ARN) of the Amazon Simple Notification Service (Amazon SNS) topic that AWS Config delivers notifications to.
+    Default: ''
+  ConnectToGuardDuty:
+    Type: String
+    Description: Whether this account needs to be connected to the central GuardDuty
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  FlowLogsDestinationArn:
+    Type: String
+    Description: Arn of FlowLogs. Its required as its passed as a input from the stackset
+    Default: ''

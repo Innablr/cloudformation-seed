@@ -1,0 +1,139 @@
+---
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Setting up shared services (Alert Topic, VPC, TGW, Proxy, DNS)
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Account information"
+        Parameters:
+          - AccountShortname
+      -
+        Label:
+          default: "VPC configuration"
+        Parameters:
+          - VPCCIDR
+          - PublicSubnet
+          - PrivateTier0
+          - PublicDownSize
+          - SubnetDivide
+      -
+        Label:
+          default: "VPN configuration"
+        Parameters:
+          - AccessToSS
+          - AccessToVPN
+      -
+        Label:
+          default: "Gateway Accounts Routing"
+        Parameters:
+          - Environment
+
+    ParameterLabels:
+      AccountShortname:
+        default: "Specify the Account short name"
+      VPCCIDR:
+        default: "CIDR for the VPC"
+      PrivateTier0:
+        default: "Do you need Tier0 subnets?"
+      PublicSubnet:
+        default: "Do you need Internet access?"
+      SubnetDivide:
+        default: "How many bits a subnet is smaller than the VPC"
+      PublicDownSize:
+        default: "How many bits a public subnet is smaller than a private subnet"
+      AccessToSS:
+        default: "Do you need Access to Shared Services"
+      AccessToVPN:
+        default: "Do you need Access to VPN"
+      Environment:
+        default: "API Gateway environment. NA for API GW Acc, PoC Acc, Tools Acc."
+
+Parameters:
+  AccountShortname:
+    Type: String
+    Description: Account Department Name plus the Environment purpose (e.g. wageringcore-dev)
+    AllowedPattern: '^[a-z][a-z0-9\-]+$'
+  VPCCIDR:
+    Type: String
+    Description: Any valid CIDR large enough for a VPC
+  PrivateTier0:
+    Type: String
+    Description: Select True or False
+    Default: 'True'
+    AllowedValues:
+      - 'True'
+      - 'False'
+  PublicSubnet:
+    Type: String
+    Description: Select True or False
+    Default: 'True'
+    AllowedValues:
+      - 'True'
+      - 'False'
+  PublicDownSize:
+    Type: Number
+    Description: Downsize the public ips
+    Default: 1
+  SubnetDivide:
+    Type: Number
+    Description: Subnet division
+    Default: 4
+  AccessToSS:
+    Type: String
+    Description: Select True or False
+    Default: 'True'
+    AllowedValues:
+      - 'True'
+      - 'False'
+  AccessToVPN:
+    Type: String
+    Description: Select True or False
+    Default: 'True'
+    AllowedValues:
+      - 'True'
+      - 'False'
+  Environment:
+    Type: String
+    Description: Select environment type
+    Default: 'None'
+    AllowedValues:
+      - 'None'
+      - 'PROD'
+      - 'DEV'
+      - 'SVT'
+      - 'UAT'
+
+Resources:
+  ProvisioningAccounts:
+    Type: Custom::ReadSSMParameters
+    Properties:
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:SSMParametersLambda
+      Items:
+        - Name: RootServicesAccountId
+        - Name: SharedServicesAccountId
+        - Name: LoggingAccountId
+        - Name: !Sub ${AccountShortname}-AccountID
+          OutputAttribute: AccountID
+        - Name: !Sub ${AccountShortname}-AccountFullName
+          OutputAttribute: AccountFullName
+        - Name: !Sub ${AccountShortname}-AccountEmailAddress
+          OutputAttribute: AccountEmailAddress
+        - Name: !Sub ${AccountShortname}-AccountDomainName
+          OutputAttribute: AccountDomainName
+        - Name: !Sub ${AccountShortname}-AccountEnvironment
+          OutputAttribute: AccountEnvironment
+
+  GenerateSubnets:
+    Type: Custom::GenerateSubnets
+    Properties:
+      ServiceToken: !Sub arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:SubnetGenerator
+      Address: !Ref VPCCIDR
+      AvailabilityZones: 3
+      Tier0: !Ref PrivateTier0
+      Public: !Ref PublicSubnet
+      PublicDownSize: !Ref PublicDownSize
+      SubnetDivide: !Ref SubnetDivide
