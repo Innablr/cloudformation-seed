@@ -1,5 +1,6 @@
 Cloudformation Seed
 ======
+[![Build Status](https://travis-ci.org/Innablr/cloudformation-seed.svg?branch=master)](https://travis-ci.org/Innablr/cloudformation-seed)
 
 Preface
 ------
