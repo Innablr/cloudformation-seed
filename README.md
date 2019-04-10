@@ -2,6 +2,8 @@ Cloudformation Seed
 ======
 [![Build Status](https://travis-ci.org/Innablr/cloudformation-seed.svg?branch=master)](https://travis-ci.org/Innablr/cloudformation-seed)
 
+[![Coverage Status](https://coveralls.io/repos/github/Innablr/badge.svg?branch=feature/add-unit-test)](https://coveralls.io/github/Innablr/cloudformation-seed?branch=feature/add-unit-test)
+
 Preface
 ------
 

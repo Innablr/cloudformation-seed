@@ -2,3 +2,6 @@ boto3>=1.9.64
 PyYAML>=5.1
 colorama>=0.4.1
 flake8==3.5.0
+coverage==4.5.3
+coverage-badge==1.0.1
+coveralls==1.7.0
