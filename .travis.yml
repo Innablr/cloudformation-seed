@@ -10,6 +10,8 @@ matrix:
 
 before_install:
   - export BOTO_CONFIG=/dev/null
+  - export AWS_ACCESS_KEY_ID=justtofoolmoto
+  - export AWS_SECRET_ACCESS_KEY=justtofoolmoto
 
 install:
   - pip install -r requirements.txt
