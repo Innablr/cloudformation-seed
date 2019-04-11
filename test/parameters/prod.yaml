@@ -47,6 +47,8 @@ stacks:
       ConfigTopicArn: ''
       ConnectToGuardDuty: 'false'
       FlowLogsDestinationArn: ''
+      TestCloudformationTemplateS3Url: !CloudformationTemplateS3Url my-project.cf.yaml
+      TestCloudformationTemplateS3Key: !CloudformationTemplateS3Key my-project.cf.yaml
 
 
 

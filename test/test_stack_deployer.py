@@ -6,6 +6,7 @@ import sys
 import logging
 from moto import mock_s3
 import boto3
+from . import common_class
 
 
 class CommonClass():
@@ -35,7 +36,8 @@ class CommonClass():
         testargs = ["PassArgs", "-i", "test-stack", "-e", "prod",
                     "-d", "test.unit.cld", "--parameters-dir",
                     "test/parameters", "--templates-dir", "test/cloudformation",
-                    "--lambda-dir", "test/src", "deploy"]
+                    "--lambda-dir", "test/src", "-o", "arn:aws:organizations::999999999999:organization/o-k1u4444444",
+                    "--cleanup-lambda", "deploy"]
         with patch.object(sys, 'argv', testargs):
             deploy_stack_object = StackDeployer()
         return deploy_stack_object
@@ -170,7 +172,7 @@ class TestDeploy(unittest.TestCase):
                                  lineno='', msg='YELLOW', args=None,
                                  exc_info=None)
         obj_format = ch.format(record)
-        self.assertEqual(obj_format, '\x1b \x1b[33mYELLOW\x1b[0m', 'Failed: Yello color formatter')
+        self.assertEqual(obj_format, '\x1b \x1b[33mYELLOW\x1b[0m', 'Failed: Yellow color formatter')
 
     @patch('deploy_stack.deploy_stack.StackParameters.format_role_pair')
     @patch('deploy_stack.deploy_stack.StackParameters.parse_parameters')
@@ -179,25 +181,21 @@ class TestDeploy(unittest.TestCase):
     @patch('deploy_stack.deploy_stack.s')
     def test_format_role_pair(self, mock_session, mock_stack_lambda, mock_stack_output,
     mock_parse_parameters, mock_format_role_pair):
-        class Options:
-            def __init__(self):
-                self.installation_name = 'rco'
-                self.component_name = 'generic-ops'
-                self.dns_domain = 'test.innablr.cld'
-                self.org_arn = None
-                self.runtime_environment = 'prod'
-                self.parameters_dir = 'test/parameters'
-
-        class Template:
-            def __init__(self):
-                self.name = 'logging-set'
-                self.template_type = 'stackset'
-
         obj_common_class = CommonClass(mock_session)
         obj_bucket = obj_common_class._bucket()
         mock_stack_lambda.return_value = 'Test.zip'
         mock_stack_output.return_value = '100'
         mock_parse_parameters.return_value = {}
         mock_format_role_pair.return_value = {}
-        test = StackParameters(obj_bucket, Template(), '', Options(), 'prod')
-        test.format_operation_preferences()
+        test = StackParameters(obj_bucket, common_class.Template(), '', common_class.Options(),
+        common_class.CloudformationEnvironment())
+        obj_pref = test.format_operation_preferences()
+        self.assertEqual(obj_pref['OperationPreferences']['FailureTolerancePercentage'], 100,
+        'Failed to set the Failure Tolerance Percentage.')
+
+    @patch('deploy_stack.deploy_stack.s')
+    def test_bucket_policy(self, mock_session):
+        test = CommonClass(mock_session)
+        deploy_object = test.load_init()
+        obj_bucket_policy = deploy_object.set_bucket_policy()
+        self.assertIsNone(obj_bucket_policy)
