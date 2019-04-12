@@ -2,6 +2,10 @@ Cloudformation Seed
 ======
 [![Build Status](https://travis-ci.org/Innablr/cloudformation-seed.svg?branch=feature%2Fadd-unit-test)](https://travis-ci.org/Innablr/cloudformation-seed)
 [![Coverage Status](https://coveralls.io/repos/github/Innablr/cloudformation-seed/badge.svg?branch=feature%2Fadd-unit-test&service=github1)](https://coveralls.io/github/Innablr/cloudformation-seed?branch=feature%2Fadd-unit-test&service=github1)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
+[![PyPI version fury.io](https://badge.fury.io/py/cloudformation-seed.svg)](https://pypi.org/project/cloudformation-seed/)
+
 
 Preface
 ------
