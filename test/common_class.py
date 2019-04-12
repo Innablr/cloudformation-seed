@@ -98,7 +98,19 @@ class CloudformationTemplateBody():
         self.body = {'Key': 'Value'}
 
 
+class StackParameters():
+    def __init__(self) -> None:
+        self.bucket = 'Test'
+
+    def format_parameters(self):
+        d = {'ParameterKey': 'Test', 'ParameterValue': 'Success'}
+        return Mock(**d)
+
+
 class Template():
     def __init__(self):
         self.name = 'logging-set'
         self.template_type = 'stackset'
+        self.outputs = [{'OutputKey': 'BucketName', 'OutputValue': 'myteststack-output'}]
+        self.template_url = 'dummy_url'
+        self.stack_parameters = StackParameters()
