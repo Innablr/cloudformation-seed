@@ -19,7 +19,6 @@ from functools import wraps
 from colorama import init as init_colorama, Fore, Style
 from string import Template
 from botocore.exceptions import ClientError
-from . import s3Util
 
 log = logging.getLogger('deploy-stack')
 
@@ -1326,16 +1325,14 @@ class StackDeployer(object):
         return b
 
     def delete_bucket(self):
+        while len(list(self.bucket.object_versions.limit(1))) > 0:
+            log.info(f'Deleting object versions in bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
+            self.bucket.object_versions.limit(1000).delete()
+        while len(list(self.bucket.objects.limit(1))) > 0:
+            log.info(f'Deleting objects in bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
+            self.bucket.objects.limit(1000).delete()
         log.info(f'Deleting S3 bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
-        s3_client = s.client('s3')
-        response = s3_client.get_bucket_versioning(Bucket=self.bucket.name)
-        status = response.get('Status', '')
-        if status == 'Enabled':
-            s3_utils = s3Util.S3Utils(log=log, bucket_name=self.bucket.name, session=s)
-            s3_utils.delete_versioned_buckets()
-        else:
-            self.bucket.objects.all().delete()
-            self.bucket.delete()
+        self.bucket.delete()
         log.info(f'Successfully deleted S3 bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
 
     def deploy_environment(self):
