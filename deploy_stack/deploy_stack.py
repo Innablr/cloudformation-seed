@@ -1325,9 +1325,15 @@ class StackDeployer(object):
         return b
 
     def delete_bucket(self):
+        while len(list(self.bucket.object_versions.limit(1))) > 0:
+            log.info(f'Deleting object versions in bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
+            self.bucket.object_versions.limit(1000).delete()
+        while len(list(self.bucket.objects.limit(1))) > 0:
+            log.info(f'Deleting objects in bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
+            self.bucket.objects.limit(1000).delete()
         log.info(f'Deleting S3 bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
-        self.bucket.objects.all().delete()
         self.bucket.delete()
+        log.info(f'Successfully deleted S3 bucket {Fore.GREEN}{self.bucket.name}{Style.RESET_ALL}...')
 
     def deploy_environment(self):
         if 'ssm-parameters' in self.environment_parameters:
