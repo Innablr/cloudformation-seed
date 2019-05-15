@@ -5,6 +5,7 @@ import version
 HERE = pathlib.Path(__file__).parent
 
 README = (HERE / 'README.md').read_text()
+REQS = (HERE / 'requirements.txt').read_text().split('\n')
 
 setup(
     name='cloudformation-seed',
@@ -23,7 +24,7 @@ setup(
     ],
     packages=['deploy_stack'],
     include_package_data=True,
-    install_requires=['boto3>=1.9.64', 'PyYAML>=5.1', 'colorama>=0.4.1'],
+    install_requires=REQS,
     entry_points={
         'console_scripts': [
             'cloudformation-seed=deploy_stack:main',
