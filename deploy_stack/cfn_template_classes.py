@@ -11,6 +11,7 @@ import logging
 
 log = logging.getLogger('deploy-stack')
 
+
 class CloudformationTemplateBody:
     def __init__(self, template_text: str) -> None:
         self.text = template_text
@@ -35,7 +36,8 @@ class CloudformationTemplate(object):
         self.template_body: CloudformationTemplateBody = self.load_template(file_path)
         self.s3_key_prefix: str = s3_key_prefix
         self.s3_key: str = self.build_s3_key(self.template_key, self.template_checksum)
-        self.u: s3_classes.S3Uploadable = s3_classes.S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
+        self.u: s3_classes.S3Uploadable = \
+            s3_classes.S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
 
     @property
     def name(self) -> str:
@@ -126,7 +128,8 @@ class CloudformationCollection(util_classes.DirectoryScanner):
         try:
             return [x for x in self.templates if x.template == template_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Template {template_name} not found in this deployment') from None
+            raise util_classes.InvalidStackConfiguration(f'Template {template_name} not found in this deployment')\
+                from None
 
     def find_template_file(self, template_key: str) -> str:
         for xk, xp in self.template_files:

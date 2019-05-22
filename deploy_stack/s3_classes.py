@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
 
+
 class S3Uploadable(object):
     def __init__(self, file_path: str, s3_bucket: Any, s3_key: str, object_checksum: Optional[str] = None) -> None:
         self.file_path: str = file_path

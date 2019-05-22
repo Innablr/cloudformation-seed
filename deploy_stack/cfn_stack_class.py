@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
 
+
 class CloudformationStack(object):
 
     def __init__(self, installation_name: str, template: cfn_template_classes.CloudformationTemplate) -> None:
@@ -109,4 +110,3 @@ class CloudformationStack(object):
         self.stack = r.Stack(self.stack_name)
         log.info(f'Found stack {Fore.GREEN}{self.stack.stack_name}{Style.RESET_ALL} '
             f'in status {Fore.MAGENTA}{self.stack.stack_status}{Style.RESET_ALL}')
-

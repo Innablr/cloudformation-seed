@@ -15,6 +15,7 @@ from botocore.exceptions import ClientError
 
 log = logging.getLogger('deploy-stack')
 
+
 class StackSetRollout:
     def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
@@ -236,7 +237,8 @@ class CloudformationStackSet(object):
             return None
 
     def get_stack_output(self, output_name: str) -> NoReturn:
-        raise util_classes.InvalidStackConfiguration(f'Can\'t retrieve output {output_name} of stackset {self.stack_name}'
+        raise util_classes.InvalidStackConfiguration(f'Can\'t retrieve output {output_name} '
+                                                     f'of stackset {self.stack_name}'
                                         f', stacksets don\'t have outputs. Please review your configuration')
 
     @retry_pending
@@ -270,7 +272,8 @@ class CloudformationStackSet(object):
                 color=Fore.GREEN,
                 color_reset=Style.RESET_ALL))
         template_changed: bool = \
-            cfn_template_classes.CloudformationTemplateBody(self.existing_stack['TemplateBody']).checksum != self.template.template_checksum
+            cfn_template_classes.CloudformationTemplateBody(self.existing_stack['TemplateBody'])\
+                .checksum != self.template.template_checksum
         log.info('Template is {color}{is_changing}{color_reset} for stackset {color}{stackset_name}{color_reset}'
             .format(is_changing='changing' if template_changed else 'not changing',
                 stackset_name=self.stack_name,

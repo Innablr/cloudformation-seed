@@ -1,7 +1,6 @@
 from typing import Any, Optional
 from typing import List
 
-import deploy_stack
 from deploy_stack import s3_classes
 from deploy_stack import util_classes
 

@@ -58,7 +58,8 @@ class CloudformationEnvironment(object):
         try:
             return [f'{xt.s3_key_prefix}/{xt.s3_key}' for xt in self.templates if xt.s3_key == template_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Template {template_name} is not part of the deployment') from None
+            raise util_classes.InvalidStackConfiguration(f'Template {template_name} is not part of the deployment')\
+                from None
 
     def deploy_stacks(self):
         for xs in self.stacks:
@@ -174,9 +175,10 @@ class StackDeployer(object):
         log.info(f'Creating S3 bucket {Fore.GREEN}{b.name}{Style.RESET_ALL}...')
 
         bucket_create_kwargs = {
-          'ACL': 'private',
+            'ACL': 'private'
         }
-        if (util_classes.s.region_name != 'us-east-1'):
+
+        if util_classes.s.region_name != 'us-east-1':
             bucket_create_kwargs['CreateBucketConfiguration'] = {'LocationConstraint': util_classes.s.region_name}
 
         try:
