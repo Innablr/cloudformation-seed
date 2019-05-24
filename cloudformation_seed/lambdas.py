@@ -1,8 +1,7 @@
 from typing import Any, Optional
 from typing import List
 
-from deploy_stack import s3_classes
-from deploy_stack import util_classes
+from cloudformation_seed import s3_classes, util
 
 import zipfile
 import subprocess
@@ -12,7 +11,7 @@ import os
 import hashlib
 from colorama import Fore, Style
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class LambdaFunction(object):
@@ -35,7 +34,7 @@ class LambdaFunction(object):
                 log.debug(f'Finally {xf} looks like a zip file')
                 return xf
             log.debug(f'{xf} is not a zip file')
-        raise util_classes.InvalidStackConfiguration(f'Lambda function source at {self.path} must produce a zipfile')
+        raise util.InvalidStackConfiguration(f'Lambda function source at {self.path} must produce a zipfile')
 
     def checksum_zipfile(self) -> str:
         sha1sum = hashlib.sha1()
@@ -59,7 +58,7 @@ class LambdaFunction(object):
             log.error(e.stdout)
             log.error('-' * 64)
             log.error('Aborting deployment')
-            raise util_classes.DeploymentFailed(f'Make failed in {self.path}') from None
+            raise util.DeploymentFailed(f'Make failed in {self.path}') from None
         self.zip_file = self.find_lambda_zipfile()
         self.zip_checksum = self.checksum_zipfile()
         self.u = s3_classes.S3Uploadable(os.path.join(self.path, self.zip_file), self.s3_bucket,
@@ -97,4 +96,4 @@ class LambdaCollection(object):
         try:
             return [x.s3_key for x in self.lambdas if x.zip_file == zip_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Lambda function bundle {zip_name} not found') from None
+            raise util.InvalidStackConfiguration(f'Lambda function bundle {zip_name} not found') from None

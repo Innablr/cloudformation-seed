@@ -1,24 +1,19 @@
 #!/usr/bin/env python3
-from deploy_stack import util_classes
-from deploy_stack import s3_classes
-from deploy_stack import lambda_classes
-from deploy_stack import cfn_template_classes
-from deploy_stack import cfn_stack_class
-from deploy_stack import cfn_stackset_classes
+from cloudformation_seed import util, s3_classes, lambdas, cfn_template, cfn_stack, cfn_stackset
 
 import yaml
 import os
-import sys
 import argparse
 import logging
+import sys
 from colorama import init as init_colorama, Fore, Style
 from string import Template
 from botocore.exceptions import ClientError
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
-class CloudformationEnvironment(object):
+class StackParser(object):
     def __init__(self, s3_bucket, lambdas, templates, manifest, options):
         self.s3_bucket = s3_bucket
         self.options = options
@@ -41,33 +36,33 @@ class CloudformationEnvironment(object):
         for xt in self.templates.list_deployable():
             if xt.template_type == 'stack':
                 log.info(f'Adding stack {Fore.GREEN}{xt.name}{Style.RESET_ALL}...')
-                stacks.append(cfn_stack_class.CloudformationStack(self.installation_name, xt))
+                stacks.append(cfn_stack.CloudformationStack(self.installation_name, xt))
             elif xt.template_type == 'stackset':
                 log.info(f'Adding stackset {Fore.GREEN}{xt.name}{Style.RESET_ALL}...')
-                stacks.append(cfn_stackset_classes.CloudformationStackSet(self.installation_name, xt))
+                stacks.append(cfn_stackset.CloudformationStackSet(self.installation_name, xt))
         return stacks
 
     def find_stack_output(self, stack_name, output_name):
         try:
             return [xs.get_stack_output(output_name) for xs in self.stacks if xs.template.name == stack_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Can\'t find output {output_name} on stack {stack_name}, '
+            raise util.InvalidStackConfiguration(f'Can\'t find output {output_name} on stack {stack_name}, '
                         f'template {stack_name} is not part of the deployment') from None
 
     def find_template(self, template_name):
         try:
             return [f'{xt.s3_key_prefix}/{xt.s3_key}' for xt in self.templates if xt.s3_key == template_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Template {template_name} is not part of the deployment')\
+            raise util.InvalidStackConfiguration(f'Template {template_name} is not part of the deployment')\
                 from None
 
     def deploy_stacks(self):
         for xs in self.stacks:
-            util_classes.log_section(f'Deploying {xs.template.template_type} {xs.stack_name}')
-            p = util_classes.StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
+            util.log_section(f'Deploying {xs.template.template_type} {xs.stack_name}')
+            p = util.StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
             xs.set_parameters(p)
             xs.deploy()
-            util_classes.log_section(f'{xs.stack_name} deployment complete')
+            util.log_section(f'{xs.stack_name} deployment complete')
 
     def teardown_stacks(self):
         for xs in reversed(self.stacks):
@@ -107,8 +102,8 @@ class StackDeployer(object):
     def setup_args(self):
         self.bucket = self.set_bucket()
         if self.o.org_arn is not None:
-            if util_classes.ORG_ARN_RE.match(self.o.org_arn) is None:
-                raise util_classes.InvalidParameters(f'Organisation ARN must be a valid ARN, not [{self.o.org_arn}]')
+            if util.ORG_ARN_RE.match(self.o.org_arn) is None:
+                raise util.InvalidParameters(f'Organisation ARN must be a valid ARN, not [{self.o.org_arn}]')
             self.set_bucket_policy()
         self.environment_parameters = self.read_parameters_yaml()
 
@@ -119,7 +114,7 @@ class StackDeployer(object):
         ch = logging.StreamHandler(sys.stdout)
         ch.setLevel(logging.DEBUG if self.o.verbose else logging.INFO)
         if not self.o.no_color:
-            ch.setFormatter(util_classes.ColorFormatter('%(levelname)s %(message)s'))
+            ch.setFormatter(util.ColorFormatter('%(levelname)s %(message)s'))
         else:
             ch.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
         log.addHandler(ch)
@@ -141,13 +136,13 @@ class StackDeployer(object):
         log.info(f'Loading environment parameters from {Fore.GREEN}{env_config_path}{Style.RESET_ALL}')
         try:
             with open(env_config_path, 'r') as f:
-                return yaml.load(f, Loader=util_classes.IgnoreYamlLoader)
+                return yaml.load(f, Loader=util.IgnoreYamlLoader)
         except OSError:
-            raise util_classes.InvalidParameters(f'You have specified runtime environment {self.o.runtime_environment},'
+            raise util.InvalidParameters(f'You have specified runtime environment {self.o.runtime_environment},'
                 f' but the file {env_config_path} does not exist') from None
 
     def set_bucket_policy(self) -> None:
-        org_id = util_classes.ORG_ARN_RE.match(self.o.org_arn).group('org_id')
+        org_id = util.ORG_ARN_RE.match(self.o.org_arn).group('org_id')
         policy_template = Template('''
         { "Version": "2012-10-17", "Statement": [ {
             "Sid": "ReadTemplatesBucket",
@@ -168,8 +163,8 @@ class StackDeployer(object):
         p.put(Policy=policy_text)
 
     def set_bucket(self):
-        r = util_classes.s.resource('s3')
-        c = util_classes.s.client('s3')
+        r = util.session.resource('s3')
+        c = util.session.client('s3')
         b = r.Bucket(f'{self.o.installation_name}-{self.o.component_name}.{self.o.dns_domain}')
         v = r.BucketVersioning(b.name)
         log.info(f'Creating S3 bucket {Fore.GREEN}{b.name}{Style.RESET_ALL}...')
@@ -178,8 +173,8 @@ class StackDeployer(object):
             'ACL': 'private'
         }
 
-        if util_classes.s.region_name != 'us-east-1':
-            bucket_create_kwargs['CreateBucketConfiguration'] = {'LocationConstraint': util_classes.s.region_name}
+        if util.session.region_name != 'us-east-1':
+            bucket_create_kwargs['CreateBucketConfiguration'] = {'LocationConstraint': util.session.region_name}
 
         try:
             b.create(**bucket_create_kwargs)
@@ -211,49 +206,49 @@ class StackDeployer(object):
 
     def deploy_environment(self):
         if 'ssm-parameters' in self.environment_parameters:
-            util_classes.log_section('Set parameter values in SSM', bold=True)
-            s = util_classes.SSMParameters(self.environment_parameters['ssm-parameters'],
-                self.o.component_name, self.o.installation_name)
+            util.log_section('Set parameter values in SSM', bold=True)
+            s = util.SSMParameters(self.environment_parameters['ssm-parameters'],
+                                   self.o.component_name, self.o.installation_name)
             s.set_all_parameters()
 
-        util_classes.log_section('Upload lambda code', bold=True)
-        l = lambda_classes.LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)  # noqa E741
+        util.log_section('Upload lambda code', bold=True)
+        l = lambdas.LambdaCollection(self.o.lambda_dir, self.bucket, self.o.lambda_prefix)  # noqa E741
         l.prepare()
         l.upload()
         if self.o.cleanup_lambda:
             l.cleanup()
 
-        util_classes.log_section('Loading version manifest', bold=True)
-        m = util_classes.VersionManifest(self.bucket, self.o.manifest)
+        util.log_section('Loading version manifest', bold=True)
+        m = util.VersionManifest(self.bucket, self.o.manifest)
 
-        util_classes.log_section('Upload Application configuration', bold=True)
+        util.log_section('Upload Application configuration', bold=True)
         c = s3_classes.S3RecursiveUploader(os.path.join(self.o.appconfig_dir, self.o.runtime_environment),
                 self.bucket, self.o.appconfig_prefix)
         c.upload()
 
-        util_classes.log_section('Collect and upload Cloudformation templates', bold=True)
-        t = cfn_template_classes.CloudformationCollection(self.o.templates_dir, self.bucket,
-                self.o.templates_prefix, self.environment_parameters)
+        util.log_section('Collect and upload Cloudformation templates', bold=True)
+        t = cfn_template.CloudformationCollection(self.o.templates_dir, self.bucket,
+                                                  self.o.templates_prefix, self.environment_parameters)
         t.upload()
 
-        util_classes.log_section('Initialise Cloudformation environment', bold=True)
-        e = CloudformationEnvironment(self.bucket, l, t, m, self.o)
+        util.log_section('Initialise Cloudformation environment', bold=True)
+        e = StackParser(self.bucket, l, t, m, self.o)
 
-        util_classes.log_section('Deploy stacks', bold=True)
+        util.log_section('Deploy stacks', bold=True)
         e.deploy_stacks()
 
     def teardown_environment(self):
-        util_classes.log_section('Collect Cloudformation templates', bold=True)
-        t = cfn_template_classes.CloudformationCollection(self.o.templates_dir, self.bucket,
-                self.o.templates_prefix, self.environment_parameters)
+        util.log_section('Collect Cloudformation templates', bold=True)
+        t = cfn_template.CloudformationCollection(self.o.templates_dir, self.bucket,
+                                                  self.o.templates_prefix, self.environment_parameters)
 
-        util_classes.log_section('Initialise Cloudformation environment', bold=True)
-        e = CloudformationEnvironment(self.bucket, None, t, None, self.o)
+        util.log_section('Initialise Cloudformation environment', bold=True)
+        e = StackParser(self.bucket, None, t, None, self.o)
 
-        util_classes.log_section('Delete stacks', bold=True)
+        util.log_section('Delete stacks', bold=True)
         e.teardown_stacks()
 
-        util_classes.log_section('Delete bucket', bold=True)
+        util.log_section('Delete bucket', bold=True)
         self.delete_bucket()
 
     def run(self):

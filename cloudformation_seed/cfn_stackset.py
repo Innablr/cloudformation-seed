@@ -1,5 +1,4 @@
-from deploy_stack import util_classes
-from deploy_stack import cfn_template_classes
+from cloudformation_seed import util, cfn_template
 
 from typing import Dict, List, Any, Optional, NoReturn
 
@@ -13,7 +12,7 @@ from functools import wraps
 from colorama import Fore, Style
 from botocore.exceptions import ClientError
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class StackSetRollout:
@@ -26,7 +25,7 @@ class StackSetRollout:
         self.delete = list()
 
     def retrieve(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         log.info('Loading stack instances...')
         r = c.list_stack_instances(StackSetName=self.stack_name)
         self.stack_instances = dict()
@@ -47,7 +46,7 @@ class StackSetRollout:
             return new_account
 
     def region_need_update(self, account_id, region, overrides):
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         r = c.describe_stack_instance(
             StackSetName=self.stack_name,
             StackInstanceAccount=account_id,
@@ -195,10 +194,10 @@ class StackSetRollout:
 
 
 class CloudformationStackSet(object):
-    def __init__(self, installation_name: str, template: cfn_template_classes.CloudformationTemplate) -> None:
-        self.template: cfn_template_classes.CloudformationTemplate = template
+    def __init__(self, installation_name: str, template: cfn_template.CloudformationTemplate) -> None:
+        self.template: cfn_template.CloudformationTemplate = template
         self.stack_name: str = f'{installation_name}-{self.template.name}'
-        self.stack_parameters: Optional[util_classes.StackParameters] = None
+        self.stack_parameters: Optional[util.StackParameters] = None
         self.existing_stack: Optional[Dict[str, Any]] = self.find_existing_stackset()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
@@ -219,13 +218,13 @@ class CloudformationStackSet(object):
                         raise
         return wrapper
 
-    def set_parameters(self, parameters: util_classes.StackParameters) -> None:
+    def set_parameters(self, parameters: util.StackParameters) -> None:
         self.stack_parameters = parameters
         if self.stack_parameters.rollout is not None:
             self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         try:
             r = c.describe_stack_set(StackSetName=self.stack_name)
             stackset = r['StackSet']
@@ -237,13 +236,13 @@ class CloudformationStackSet(object):
             return None
 
     def get_stack_output(self, output_name: str) -> NoReturn:
-        raise util_classes.InvalidStackConfiguration(f'Can\'t retrieve output {output_name} '
+        raise util.InvalidStackConfiguration(f'Can\'t retrieve output {output_name} '
                                                      f'of stackset {self.stack_name}'
                                         f', stacksets don\'t have outputs. Please review your configuration')
 
     @retry_pending
     def create_stackset(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         params: Dict[str, Any] = {
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
@@ -272,7 +271,7 @@ class CloudformationStackSet(object):
                 color=Fore.GREEN,
                 color_reset=Style.RESET_ALL))
         template_changed: bool = \
-            cfn_template_classes.CloudformationTemplateBody(self.existing_stack['TemplateBody'])\
+            cfn_template.CloudformationTemplateBody(self.existing_stack['TemplateBody'])\
                 .checksum != self.template.template_checksum
         log.info('Template is {color}{is_changing}{color_reset} for stackset {color}{stackset_name}{color_reset}'
             .format(is_changing='changing' if template_changed else 'not changing',
@@ -288,7 +287,7 @@ class CloudformationStackSet(object):
             return
 
         p = self.stack_parameters.format_parameters()
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         log.info(f'Updating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         log.debug(' Parameters '.center(48, '-'))
@@ -316,7 +315,7 @@ class CloudformationStackSet(object):
 
     @retry_pending
     def cleanup_stack_instances(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         if self.stackset_rollout is None:
             log.info('Rollout configuration is missing, not cleaning up stack instances')
             return
@@ -338,7 +337,7 @@ class CloudformationStackSet(object):
 
     @retry_pending
     def rollout_accounts(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         if self.stackset_rollout is None:
             log.info('Rollout configuration is missing, not deploying stack instances')
             return
@@ -374,7 +373,7 @@ class CloudformationStackSet(object):
 
     @retry_pending
     def wipe_out_stackset_instances(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         i = c.list_stack_instances(StackSetName=self.stack_name)
         for account, group in itertools.groupby(sorted(i['Summaries'],
                 key=lambda x: x['Account']), lambda x: x['Account']):
@@ -393,7 +392,7 @@ class CloudformationStackSet(object):
 
     @retry_pending
     def delete_stackset(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         log.info(f'Deleting stackset {self.stack_name}...')
         c.delete_stack_set(StackSetName=self.stack_name)
 
@@ -405,7 +404,7 @@ class CloudformationStackSet(object):
         self.delete_stackset()
 
     def wait_pending_operations(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         try:
             time.sleep(1)
             while True:

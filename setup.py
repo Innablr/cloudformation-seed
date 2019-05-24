@@ -22,12 +22,12 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
     ],
-    packages=['deploy_stack'],
+    packages=['cloudformation_seed'],
     include_package_data=True,
     install_requires=REQS,
     entry_points={
         'console_scripts': [
-            'cloudformation-seed=deploy_stack:main',
+            'cloudformation-seed=cloudformation_seed:main',
         ]
     },
 )

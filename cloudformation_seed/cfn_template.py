@@ -1,5 +1,4 @@
-from deploy_stack import s3_classes
-from deploy_stack import util_classes
+from cloudformation_seed import s3_classes, util
 
 from typing import Dict, List, Any, Tuple
 from colorama import Fore, Style
@@ -9,14 +8,14 @@ import yaml
 import hashlib
 import logging
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class CloudformationTemplateBody:
     def __init__(self, template_text: str) -> None:
         self.text = template_text
         self.checksum = self.calculate_checksum(self.text)
-        self.body: Dict[str, Any] = yaml.load(template_text, Loader=util_classes.IgnoreYamlLoader)
+        self.body: Dict[str, Any] = yaml.load(template_text, Loader=util.IgnoreYamlLoader)
 
     @property
     def parameters(self) -> Dict[str, Dict[str, str]]:
@@ -79,13 +78,13 @@ class CloudformationTemplate(object):
         self.u.upload()
 
 
-class CloudformationCollection(util_classes.DirectoryScanner):
+class CloudformationCollection(util.DirectoryScanner):
     def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str,
                     environment_parameters: Dict['str', Any]) -> None:
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path)
-        util_classes.log_section('Collecting templates included in the environment')
+        util.log_section('Collecting templates included in the environment')
         self.templates: List[CloudformationTemplate] = [
             CloudformationTemplate(
                 self.s3_bucket,
@@ -95,7 +94,7 @@ class CloudformationCollection(util_classes.DirectoryScanner):
                 xs
             ) for xs in self.environment_parameters.get('stacks', list())
         ]
-        util_classes.log_section('Collecting templates not included in the environment')
+        util.log_section('Collecting templates not included in the environment')
         for xf in self.template_files:
             if len([xt for xt in self.templates if xt.template_key == xf[0]]) > 0:
                 continue
@@ -109,7 +108,7 @@ class CloudformationCollection(util_classes.DirectoryScanner):
                     'template': xf[0]
                 })
             )
-        util_classes.log_section('Done collecting templates')
+        util.log_section('Done collecting templates')
 
     def list_deployable(self) -> List[CloudformationTemplate]:
         u = list()
@@ -121,21 +120,21 @@ class CloudformationCollection(util_classes.DirectoryScanner):
                 stack_template = [xt for xt in self.templates if xt.name == xs.get('name')].pop()
                 u.append(stack_template)
             except IndexError:
-                raise util_classes.InvalidStackConfiguration(f'Template not found for {xs.get("name")}') from None
+                raise util.InvalidStackConfiguration(f'Template not found for {xs.get("name")}') from None
         return u
 
     def find_template(self, template_name: str) -> CloudformationTemplate:
         try:
             return [x for x in self.templates if x.template == template_name].pop()
         except IndexError:
-            raise util_classes.InvalidStackConfiguration(f'Template {template_name} not found in this deployment')\
+            raise util.InvalidStackConfiguration(f'Template {template_name} not found in this deployment')\
                 from None
 
     def find_template_file(self, template_key: str) -> str:
         for xk, xp in self.template_files:
             if xk == template_key:
                 return xp
-        raise util_classes.InvalidStackConfiguration(f'Template file not found for {template_key}')
+        raise util.InvalidStackConfiguration(f'Template file not found for {template_key}')
 
     def upload(self) -> None:
         for xt in [xt for n, xt in enumerate(self.templates)

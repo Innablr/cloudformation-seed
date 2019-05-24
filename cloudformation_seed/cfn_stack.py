@@ -1,5 +1,4 @@
-from deploy_stack import util_classes
-from deploy_stack import cfn_template_classes
+from cloudformation_seed import util, cfn_template
 
 from typing import Dict, Any, Optional
 
@@ -8,24 +7,24 @@ from colorama import Fore, Style
 from botocore.exceptions import ClientError
 
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class CloudformationStack(object):
 
-    def __init__(self, installation_name: str, template: cfn_template_classes.CloudformationTemplate) -> None:
-        self.template: cfn_template_classes.CloudformationTemplate = template
+    def __init__(self, installation_name: str, template: cfn_template.CloudformationTemplate) -> None:
+        self.template: cfn_template.CloudformationTemplate = template
         self.stack_name = f'{installation_name}-{self.template.name}'
         self.stack_parameters = None
         self.existing_stack = self.find_existing_stack()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
 
-    def set_parameters(self, parameters: util_classes.StackParameters) -> None:
+    def set_parameters(self, parameters: util.StackParameters) -> None:
         self.stack_parameters = parameters
 
     def find_existing_stack(self) -> Optional[Dict[str, Any]]:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         try:
             r = c.describe_stacks(StackName=self.stack_name)
             log.info(f'Stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} exists')
@@ -44,7 +43,7 @@ class CloudformationStack(object):
                 return xo['OutputValue']
 
     def create_stack(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         log.info(f'Creating stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         c.create_stack(
@@ -58,7 +57,7 @@ class CloudformationStack(object):
         self.retrieve()
 
     def update_stack(self) -> None:
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         p = self.stack_parameters.format_parameters()
         log.info(f'Updating stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
@@ -90,23 +89,23 @@ class CloudformationStack(object):
         if self.existing_stack is None:
             log.warning(f'Stack {self.stack_name} does not exist. Skipping.')
             return
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         log.info(f'Deleting stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL}...')
         c.delete_stack(StackName=self.stack_name)
         self.wait('stack_delete_complete')
 
     def wait(self, event: str) -> None:
         log.info('Waiting for operation to finish...')
-        c = util_classes.s.client('cloudformation')
+        c = util.session.client('cloudformation')
         waiter = c.get_waiter(event)
         try:
             waiter.wait(StackName=self.stack_name)
         except Exception as e:
             self.retrieve()
-            raise util_classes.DeploymentFailed(f'Stack {self.stack_name} deployment failed: {str(e)}') from None
+            raise util.DeploymentFailed(f'Stack {self.stack_name} deployment failed: {str(e)}') from None
 
     def retrieve(self) -> None:
-        r = util_classes.s.resource('cloudformation')
+        r = util.session.resource('cloudformation')
         self.stack = r.Stack(self.stack_name)
         log.info(f'Found stack {Fore.GREEN}{self.stack.stack_name}{Style.RESET_ALL} '
             f'in status {Fore.MAGENTA}{self.stack.stack_status}{Style.RESET_ALL}')

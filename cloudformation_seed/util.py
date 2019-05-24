@@ -8,7 +8,7 @@ import yaml
 from colorama import Fore, Style
 import copy
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class ColorFormatter(logging.Formatter):
@@ -41,7 +41,7 @@ class IgnoreYamlLoader(yaml.Loader):
 
 IgnoreYamlLoader.add_constructor(None, lambda l, n: n)
 
-s = boto3.Session()
+session = boto3.Session()
 
 
 class InvalidParameters(Exception): pass            # noqa E701,E302
@@ -111,7 +111,7 @@ class SSMParameters(object):
         return f'/{self.product_name}/{self.installation_name}/{parameter_name}'
 
     def set_all_parameters(self) -> None:
-        c = s.client('ssm')
+        c = session.client('ssm')
         for k, v in self.parameters.items():
             log.info(f'Setting SSM {Fore.GREEN}{self.parameter_path(k)}{Style.RESET_ALL}='
                 f'[{Fore.GREEN}{v}{Style.RESET_ALL}]')
@@ -163,7 +163,7 @@ class StackParameters(object):
         self.rollout = self.format_rollout()
 
     def format_rollout(self):
-        c = s.client('cloudformation')
+        c = session.client('cloudformation')
         if 'rollout' not in self.stack_definition:
             return None
         rollout = self.stack_definition['rollout']
@@ -234,7 +234,7 @@ class StackParameters(object):
         return val
 
     def set_ssm_parameter(self, loader, node):
-        c = s.client('ssm')
+        c = session.client('ssm')
         parameter_name = loader.construct_scalar(node)
         parameter_path = f'/{self.product_name}/{self.installation_name}/{parameter_name}'
         log.debug(f'Looking up SSM parameter {parameter_path}...')

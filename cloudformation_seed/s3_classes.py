@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from deploy_stack import util_classes
+from cloudformation_seed import util
 
 import os
 import hashlib
@@ -9,7 +9,7 @@ import logging
 from colorama import Fore, Style
 from botocore.exceptions import ClientError
 
-log = logging.getLogger('deploy-stack')
+log = logging.getLogger('stack-deployer')
 
 
 class S3Uploadable(object):
@@ -61,10 +61,10 @@ class S3Uploadable(object):
 
     @property
     def s3_url(self):
-        return f'{util_classes.s.client("s3").meta.endpoint_url}/{self.s3_bucket.name}/{self.s3_key}'
+        return f'{util.session.client("s3").meta.endpoint_url}/{self.s3_bucket.name}/{self.s3_key}'
 
 
-class S3RecursiveUploader(util_classes.DirectoryScanner):
+class S3RecursiveUploader(util.DirectoryScanner):
     def __init__(self, path: str, s3_bucket: Any, s3_key_prefix: str) -> None:
         self.s3_bucket: Any = s3_bucket
         self.s3_key_prefix: str = s3_key_prefix
