@@ -273,6 +273,7 @@ class StackParameters(object):
         log.debug(f'Found image name {val} for artifact {artifact_name}...')
         return val
 
+
     def read_parameters_yaml(self, filename):
         with open(filename, 'r') as f:
             return yaml.load(f, Loader=self.parameters_loader)

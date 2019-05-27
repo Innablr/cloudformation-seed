@@ -1,6 +1,6 @@
 from cloudformation_seed import s3_classes, util
 
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from colorama import Fore, Style
 
 import os
@@ -41,6 +41,11 @@ class CloudformationTemplate(object):
     @property
     def name(self) -> str:
         return self.template_parameters['name']
+
+    @property
+    def tags(self):
+        if 'tags' in self.template_parameters:
+            return self.template_parameters['tags']
 
     @property
     def template(self) -> str:
