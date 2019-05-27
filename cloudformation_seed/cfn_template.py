@@ -1,6 +1,6 @@
 from cloudformation_seed import s3_classes, util
 
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple
 from colorama import Fore, Style
 
 import os

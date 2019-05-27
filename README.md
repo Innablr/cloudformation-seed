@@ -119,6 +119,31 @@ stacks:
       SAMLUsername: *SAML_USERNAME
 ```
 
+You can also tag your stacks/stacksets by defining your tags as a dictionary and referencing them using the YAML anchors within your stacks like this:
+
+```
+tags_a: &TAGSA
+  testkey1: testvalue1
+  testkey2: testvalue2
+  
+tags_b: &TAGSB
+  testkey3: testvalue3
+  
+  stacks:
+  - name: example-stackset-template
+    type: stackset
+    template: sets/example-stackset-template.cf.yaml
+    rollout:
+      - account: '000000000000'
+    tags: *TAGA
+
+  - name: my-project-kms-decrypt-lambda
+    template: support/kms-parameters-lambda.cf.yaml
+    parameters:
+      LambdaSourceS3Key: !LambdaZip kmsParameters.zip
+    tags: *TAGSB
+```
+
 #### `stacks`
 
 Main configuration where you describe the Cloudformation stacks you want to deploy.

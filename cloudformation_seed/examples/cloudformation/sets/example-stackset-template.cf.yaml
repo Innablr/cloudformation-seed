@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Simple "hello world" lambda for testing purposes
+
+Parameters:
+  TemplatesS3Bucket:
+    Type: String
+    Description: S3 Bucket with the components templates
+  InstallationName:
+    Type: String
+    Description: Unique stack installation name
+  RuntimeEnvironment:
+    Type: String
+    Description: The runtime environment config tag
+    Default: dev
+  Route53ZoneDomain:
+    Type: String
+    Description: Route53 zone domain that represents the environment
+
+Resources:
+  LambdaRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action:
+                - "sts:AssumeRole"
+        Policies:
+          - PolicyName: "CloudwatchLogs"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "logs:CreateLogGroup"
+                    - "logs:CreateLogStream"
+                    - "logs:PutLogEvents"
+                    - "logs:DescribeLogStreams"
+                  Resource: "arn:aws:logs:*:*:*"
+  Lambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+        Description: Say hello
+        Handler:
+            index.lambda_handler
+        Runtime: "python3.6"
+        Role: !GetAtt LambdaRole.Arn
+        Timeout: 15
+        Code:
+          ZipFile: !Sub |
+            #!/usr/bin/env python
+            def lambda_handler(event, context):
+                print("Hello world!")

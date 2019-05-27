@@ -48,7 +48,7 @@ class CloudformationStack(object):
         print(self.stack_tags)
 
     def validate_tags(self, tags_passed):
-        for k,v in tags_passed.items():
+        for k, v in tags_passed.items():
             if len(k) > 129:
                 raise RuntimeError('Tag Key {0} cannot be more than 128 characters long'.format(k))
             if len(v) > 257:
@@ -101,7 +101,8 @@ class CloudformationStack(object):
                     StackName=self.stack_name,
                     TemplateURL=self.template.template_url,
                     Parameters=p,
-                    Capabilities=self.caps
+                    Capabilities=self.caps,
+                    Tags=[]
                 )
             self.wait('stack_update_complete')
         except ClientError as e:
