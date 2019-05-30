@@ -15,7 +15,7 @@ stacks:
     template: support/s3-watchdog-lambda.cf.yaml
 
   - name: centralservices-bucket-policy
-    template: centralservices/bucket-policy.cf.yaml
+    template: support/bucket-policy.cf.yaml
     parameters:
       ConnectedAccountArns: *CONNECTED_ACCOUNTS
 

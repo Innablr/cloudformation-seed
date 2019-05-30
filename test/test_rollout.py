@@ -1,7 +1,7 @@
 import itertools
 import unittest
 from unittest import mock
-from deploy_stack.deploy_stack import StackSetRollout
+from cloudformation_seed.cfn_stackset import StackSetRollout
 
 existing_stack_simple = {
     'Summaries': [
@@ -107,7 +107,7 @@ class TestGroupedRollout(unittest.TestCase):
                         return True
         return False
 
-    @mock.patch('deploy_stack.deploy_stack.s')
+    @mock.patch('cloudformation_seed.util.session')
     def test_single_region_no_update(self, mock_session):
         mock_session.client.return_value.list_stack_instances.return_value = existing_stack_simple
         mock_session.client.return_value.describe_stack_instance.return_value = existing_stack_instance
@@ -123,7 +123,7 @@ class TestGroupedRollout(unittest.TestCase):
         self.assertEqual(len(c), 0, 'should not be creating instances')
         self.assertEqual(len(u), 0, 'should not be updating instances')
 
-    @mock.patch('deploy_stack.deploy_stack.s')
+    @mock.patch('cloudformation_seed.util.session')
     def test_multi_region_no_update(self, mock_session):
         config = list()
         for account, group in itertools.groupby(sorted(existing_stack_multi_reg['Summaries'],
@@ -143,7 +143,7 @@ class TestGroupedRollout(unittest.TestCase):
         self.assertEqual(len(c), 0, 'should not be creating instances')
         self.assertEqual(len(u), 0, 'should not be updating instances')
 
-    @mock.patch('deploy_stack.deploy_stack.s')
+    @mock.patch('cloudformation_seed.util.session')
     def test_multi_region_create_update(self, mock_session):
         config = list()
         creating = {
