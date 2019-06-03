@@ -28,6 +28,6 @@ after_success:
   - if [[ "$TRAVIS_BRANCH" == "master" && "$TRAVIS_PULL_REQUEST" = "false" ]]; then
       docker push "${IMAGE_NAME}:${version}" && docker push "${IMAGE_NAME}:latest" ;
     else
-      git_sha="$(git rev-parse --short HEAD)"
-      docker push "${IMAGE_NAME}:${git_sha}-${TRAVIS_BRANCH}" && docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}"
+      git_sha="$(git rev-parse --short HEAD)" &&
+      docker push "${IMAGE_NAME}:${git_sha}-${TRAVIS_BRANCH}" && docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}" ;
     fi
