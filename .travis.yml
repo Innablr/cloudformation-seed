@@ -8,12 +8,11 @@ env:
     global:
         - IMAGE_NAME=omarst910/cloudformation-seed
         - DOCKER_USERNAME=omarst910
+        - version="$(sed -n 's/^ *version *= *//p' version.py | tr -d "'")"
 
 # pre-checks before running the
 # installation scripts
 before_install:
-    - version="$(sed -n 's/^ *version *= *//p' version.py | tr -d "'")"
-    - echo ${version}
     - echo "Testing Docker Hub credentials"
     - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
     - echo "Docker Hub credentials are working"
@@ -28,6 +27,6 @@ after_success:
   - if [[ "$TRAVIS_BRANCH" == "master" && "$TRAVIS_PULL_REQUEST" = "false" ]]; then
       docker push "${IMAGE_NAME}:${version}" && docker push "${IMAGE_NAME}:latest" ;
     else
-      git_sha="$(git rev-parse --short HEAD)" &&
+      echo ${version} && git_sha="$(git rev-parse --short HEAD)" &&
       docker push "${IMAGE_NAME}:${git_sha}-${TRAVIS_BRANCH}" && docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}" ;
     fi
