@@ -1,16 +1,30 @@
-language: python
+# have the docker service set up
+services:
+  - docker
 
-matrix:
-  include:
-    - os: linux
-      python: 3.6
-    - os: linux
-      dist: xenial
-      python: 3.7
+env:
+    global:
+        - IMAGE_NAME=omarst910/cloudformation-seed
+        - DOCKER_USERNAME=omarst910
 
-install:
-  - python setup.py develop
+# pre-checks before running the
+# installation scripts
+before_install:
+    - version="$(sed -n 's/^ *version *= *//p' version.py | tr -d "'")"
+    - echo "Testing Docker Hub credentials"
+    - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+    - echo "Docker Hub credentials are working"
 
+# Build the image using the multistage dockerfile
+# if the tests in the docker file fail
+# the whole Travis build is considered a failure.
 script:
-  - flake8
-  - python -m unittest -v
+    - docker build -f Dockerfile -t "${IMAGE_NAME}" .
+
+after_success:
+  - if [[ "$TRAVIS_BRANCH" == "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]]; then
+      docker push "${IMAGE_NAME}:${version}" && docker push "${IMAGE_NAME}:latest" ;
+    elif [[ "$TRAVIS_BRANCH" == "develop" -a "$TRAVIS_PULL_REQUEST" = "false" ]]; then
+      git_sha="$(git rev-parse --short HEAD)"
+      docker push "${IMAGE_NAME}:${git_sha}-develop" && docker push "${IMAGE_NAME}:develop"
+    fi

@@ -3,7 +3,8 @@ COMPONENT_NAME := my-project-ops
 DEBUG ?= 0
 AWS_DEFAULT_REGION ?= ap-southeast-2
 COMPONENT_NAME ?= generic-ops
-IMAGE_NAME ?= $(COMPONENT_NAME):latest
+IMAGE_NAME_OLD ?= $(COMPONENT_NAME):latest
+IMAGE_NAME ?= cfn-seed-local-final:latest
 LOCAL_BUILD ?= 0
 DOCKERFILE := Dockerfile
 
@@ -26,31 +27,36 @@ DOCKERFILE := Dockerfile.local
 APP_MOUNT := -v $(CURDIR):/app
 endif
 
+
 build:
-	docker build \
+	@docker build \
         --tag $(IMAGE_NAME) \
 		--file $(DOCKERFILE) .
 
 deploy: build
-	if [ -z "${INSTALLATION_NAME}" -o -z "${RUNTIME_ENVIRONMENT}" -o -z "${R53_DOMAIN}" ]; then \
+	@if [ -z "${INSTALLATION_NAME}" -o -z "${RUNTIME_ENVIRONMENT}" -o -z "${R53_DOMAIN}" ]; then \
 		echo "You must set INSTALLATION_NAME, RUNTIME_ENVIRONMENT and R53_DOMAIN"; \
 		exit 4; \
 	fi
-	docker run \
+	@docker run \
 		-v ~/.aws:/root/.aws \
-		$(ENVS) -v $(CURDIR):/app -t --rm \
+		$(ENVS) -v $(CURDIR):/app -t -i --rm \
 		$(IMAGE_NAME) $(DEBUG_FLAG) -c $(COMPONENT_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) deploy
 
+
 remove: build
-	if [ -z "${INSTALLATION_NAME}" -o -z "${RUNTIME_ENVIRONMENT}" -o -z "${R53_DOMAIN}" ]; then \
+	@if [ -z "${INSTALLATION_NAME}" -o -z "${RUNTIME_ENVIRONMENT}" -o -z "${R53_DOMAIN}" ]; then \
 		echo "You must set INSTALLATION_NAME, RUNTIME_ENVIRONMENT and R53_DOMAIN"; \
 		exit 4; \
 	fi
-	docker run \
+	@docker run \
 		-v ~/.aws:/root/.aws \
-		$(ENVS) -v $(CURDIR):/app -t --rm \
+		$(ENVS) -v $(CURDIR):/app -t -i --rm \
 		$(IMAGE_NAME) $(DEBUG_FLAG) -c $(COMPONENT_NAME) -i $(INSTALLATION_NAME) -e $(RUNTIME_ENVIRONMENT) -d $(R53_DOMAIN) teardown
 
 .PHONY: build deploy remove
 
+
+
 -include Makefile.targets
+

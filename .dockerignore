@@ -1,0 +1,13 @@
+**/examples
+*.egg-info/**
+build/**
+dist/**
+*.pyc
+*.zip
+.idea
+.vscode
+.DS_Store
+**/node_modules
+Dockerfile
+.gitignore
+.git
