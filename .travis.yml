@@ -1,3 +1,5 @@
+language: python
+
 # have the docker service set up
 services:
   - docker
@@ -11,6 +13,7 @@ env:
 # installation scripts
 before_install:
     - version="$(sed -n 's/^ *version *= *//p' version.py | tr -d "'")"
+    - echo ${version}
     - echo "Testing Docker Hub credentials"
     - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
     - echo "Docker Hub credentials are working"
@@ -26,5 +29,5 @@ after_success:
       docker push "${IMAGE_NAME}:${version}" && docker push "${IMAGE_NAME}:latest" ;
     elif [[ "$TRAVIS_BRANCH" == "develop" -a "$TRAVIS_PULL_REQUEST" = "false" ]]; then
       git_sha="$(git rev-parse --short HEAD)"
-      docker push "${IMAGE_NAME}:${git_sha}-develop" && docker push "${IMAGE_NAME}:develop"
+      docker push "${IMAGE_NAME}:${git_sha}-${TRAVIS_BRANCH}" && docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}"
     fi
