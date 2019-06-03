@@ -9,11 +9,6 @@ help:
 	@echo "   2. make project-remove    - delete the example project"
 	@echo ""
 
-.DELETE_ON_ERROR:
-    echo "============================"
-    echo "============================"
-    echo "============================"
-
 project:
 	INSTALLATION_NAME=$(SHAREDSERVICES_INSTALLATION_NAME) \
 	RUNTIME_ENVIRONMENT=dev \

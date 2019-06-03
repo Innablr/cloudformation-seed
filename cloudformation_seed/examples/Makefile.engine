@@ -1,10 +1,9 @@
-COMPONENT_NAME := my-project-ops
+COMPONENT_NAME := cloudformation-seed
 
 DEBUG ?= 0
 AWS_DEFAULT_REGION ?= ap-southeast-2
 COMPONENT_NAME ?= generic-ops
-IMAGE_NAME_OLD ?= $(COMPONENT_NAME):latest
-IMAGE_NAME ?= cfn-seed-local-final:latest
+IMAGE_NAME ?= $(COMPONENT_NAME):latest
 LOCAL_BUILD ?= 0
 DOCKERFILE := Dockerfile
 
