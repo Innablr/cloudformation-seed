@@ -25,9 +25,9 @@ script:
     - docker build -f Dockerfile -t "${IMAGE_NAME}" .
 
 after_success:
-  - if [[ "$TRAVIS_BRANCH" == "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]]; then
+  - if [[ "$TRAVIS_BRANCH" == "master" AND "$TRAVIS_PULL_REQUEST" = "false" ]]; then
       docker push "${IMAGE_NAME}:${version}" && docker push "${IMAGE_NAME}:latest" ;
-    elif [[ "$TRAVIS_BRANCH" == "develop" -a "$TRAVIS_PULL_REQUEST" = "false" ]]; then
+    else
       git_sha="$(git rev-parse --short HEAD)"
       docker push "${IMAGE_NAME}:${git_sha}-${TRAVIS_BRANCH}" && docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}"
     fi
