@@ -19,7 +19,7 @@ class CloudformationStack(object):
         self.existing_stack = self.find_existing_stack()
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
-        self.stack_tags = None
+        self.stack_tags = []
 
     def set_parameters(self, parameters: util.StackParameters) -> None:
         self.stack_parameters = parameters
@@ -45,37 +45,27 @@ class CloudformationStack(object):
 
     def format_tags(self, tags_passed):
         self.stack_tags = [{'Key': k, 'Value': str(v)} for k, v in tags_passed.items() if v is not None]
-        print(self.stack_tags)
 
     def validate_tags(self, tags_passed):
         for k, v in tags_passed.items():
-            if len(k) > 129:
-                raise RuntimeError('Tag Key {0} cannot be more than 128 characters long'.format(k))
-            if len(v) > 257:
-                raise RuntimeError('Tag Value {0} cannot be more than 256 characters long'.format(v))
+            if len(k) > 128:
+                raise RuntimeError('Tag Key {0} cannot be more than 127 characters long'.format(k))
+            if len(v) > 256:
+                raise RuntimeError('Tag Value {0} cannot be more than 255 characters long'.format(v))
         self.format_tags(tags_passed)
 
     def create_stack(self) -> None:
         c = util.session.client('cloudformation')
         log.info(f'Creating stack {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
-        if self.stack_tags:
-            c.create_stack(
-                StackName=self.stack_name,
-                TemplateURL=self.template.template_url,
-                Parameters=self.stack_parameters.format_parameters(),
-                DisableRollback=True,
-                Capabilities=self.caps,
-                Tags=self.stack_tags
-            )
-        else:
-            c.create_stack(
-                StackName=self.stack_name,
-                TemplateURL=self.template.template_url,
-                Parameters=self.stack_parameters.format_parameters(),
-                DisableRollback=True,
-                Capabilities=self.caps
-            )
+        c.create_stack(
+            StackName=self.stack_name,
+            TemplateURL=self.template.template_url,
+            Parameters=self.stack_parameters.format_parameters(),
+            DisableRollback=True,
+            Capabilities=self.caps,
+            Tags=self.stack_tags
+        )
         self.wait('stack_create_complete')
         self.retrieve()
 
@@ -88,22 +78,14 @@ class CloudformationStack(object):
         log.debug(p)
         log.debug('-'.center(48, '-'))
         try:
-            if self.stack_tags:
-                c.update_stack(
-                    StackName=self.stack_name,
-                    TemplateURL=self.template.template_url,
-                    Parameters=p,
-                    Capabilities=self.caps,
-                    Tags=self.stack_tags
-                )
-            else:
-                c.update_stack(
-                    StackName=self.stack_name,
-                    TemplateURL=self.template.template_url,
-                    Parameters=p,
-                    Capabilities=self.caps,
-                    Tags=[]
-                )
+            c.update_stack(
+                StackName=self.stack_name,
+                TemplateURL=self.template.template_url,
+                Parameters=p,
+                Capabilities=self.caps,
+                Tags=self.stack_tags
+            )
+
             self.wait('stack_update_complete')
         except ClientError as e:
             if e.response['Error']['Message'] == 'No updates are to be performed.':
