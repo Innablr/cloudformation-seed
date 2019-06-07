@@ -48,9 +48,9 @@ class CloudformationStack(object):
 
     def validate_tags(self, tags_passed):
         for k, v in tags_passed.items():
-            if len(k) > 128:
+            if len(k) > 127:
                 raise RuntimeError('Tag Key {0} cannot be more than 127 characters long'.format(k))
-            if len(v) > 256:
+            if len(v) > 255:
                 raise RuntimeError('Tag Value {0} cannot be more than 255 characters long'.format(v))
         self.format_tags(tags_passed)
 
