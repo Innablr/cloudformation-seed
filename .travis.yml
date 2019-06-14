@@ -9,8 +9,9 @@ matrix:
       python: 3.7
 
 install:
+  - pip install -Ur requirements-dev.txt
   - python setup.py develop
 
 script:
   - flake8
-  - python -m unittest -v
+  - python setup.py test
