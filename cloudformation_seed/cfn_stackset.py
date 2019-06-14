@@ -202,6 +202,8 @@ class CloudformationStackSet(object):
         self.caps = ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND']
         self.stack = None
         self.stackset_rollout: Optional[StackSetRollout] = None
+        self.stack_tags = []
+        self.formatted_stack_tags = []
 
     def retry_pending(f):
         @wraps(f)
@@ -235,10 +237,27 @@ class CloudformationStackSet(object):
             log.info(f'Stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} does not exist')
             return None
 
+    def tags_need_update(self):
+        c = util.session.client('cloudformation')
+        response = c.describe_stack_set(StackSetName=self.stack_name)
+        return response['StackSet']['Tags'] != self.formatted_stack_tags
+
     def get_stack_output(self, output_name: str) -> NoReturn:
         raise util.InvalidStackConfiguration(f'Can\'t retrieve output {output_name} '
                                                      f'of stackset {self.stack_name}'
                                         f', stacksets don\'t have outputs. Please review your configuration')
+
+    def format_tags(self, tags_passed):
+        self.formatted_stack_tags = [{'Key': k, 'Value': str(v)} for k, v in tags_passed.items() if v is not None]
+
+    def validate_tags(self, tags_passed):
+        self.stack_tags = tags_passed
+        for k, v in tags_passed.items():
+            if len(k) > 127:
+                raise RuntimeError('Tag Key {0} cannot be more than 127 characters long'.format(k))
+            if len(v) > 255:
+                raise RuntimeError('Tag Value {0} cannot be more than 255 characters long'.format(v))
+        self.format_tags(tags_passed)
 
     @retry_pending
     def create_stackset(self) -> None:
@@ -247,8 +266,10 @@ class CloudformationStackSet(object):
             'StackSetName': self.stack_name,
             'TemplateURL': self.template.template_url,
             'Parameters': self.stack_parameters.format_parameters(),
-            'Capabilities': self.caps
+            'Capabilities': self.caps,
+            'Tags': self.formatted_stack_tags
         }
+
         params.update(self.stack_parameters.format_role_pair())
         log.info(f'Creating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
@@ -278,7 +299,13 @@ class CloudformationStackSet(object):
                 stackset_name=self.stack_name,
                 color=Fore.GREEN,
                 color_reset=Style.RESET_ALL))
-        return parameters_changed or template_changed
+        tags_changed: bool = self.tags_need_update()
+        log.info('Tags are {color}{is_changing}{color_reset} for stackset {color}{stackset_name}{color_reset}'
+            .format(is_changing='changing' if tags_changed else 'not changing',
+                stackset_name=self.stack_name,
+                color=Fore.GREEN,
+                color_reset=Style.RESET_ALL))
+        return parameters_changed or template_changed or tags_changed
 
     @retry_pending
     def update_stackset(self) -> None:
@@ -298,7 +325,9 @@ class CloudformationStackSet(object):
             'TemplateURL': self.template.template_url,
             'Parameters': p,
             'Capabilities': self.caps,
+            'Tags': self.formatted_stack_tags
         }
+
         params.update(self.stack_parameters.format_role_pair())
         params.update(self.stack_parameters.format_operation_preferences())
         c.update_stack_set(**params)

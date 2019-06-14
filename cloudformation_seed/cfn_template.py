@@ -43,6 +43,13 @@ class CloudformationTemplate(object):
         return self.template_parameters['name']
 
     @property
+    def tags(self):
+        if 'tags' in self.template_parameters:
+            return self.template_parameters['tags']
+        else:
+            return []
+
+    @property
     def template(self) -> str:
         return self.template_parameters['template']
 

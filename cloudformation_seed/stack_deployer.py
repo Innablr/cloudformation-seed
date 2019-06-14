@@ -61,6 +61,8 @@ class StackParser(object):
             util.log_section(f'Deploying {xs.template.template_type} {xs.stack_name}')
             p = util.StackParameters(self.s3_bucket, xs.template, self.manifest, self.options, self)
             xs.set_parameters(p)
+            if xs.template.tags:
+                xs.validate_tags(xs.template.tags)
             xs.deploy()
             util.log_section(f'{xs.stack_name} deployment complete')
 
