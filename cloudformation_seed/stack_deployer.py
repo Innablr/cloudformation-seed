@@ -9,6 +9,7 @@ import sys
 from colorama import init as init_colorama, Fore, Style
 from string import Template
 from botocore.exceptions import ClientError
+from .version import VERSION
 
 log = logging.getLogger('stack-deployer')
 
@@ -96,6 +97,7 @@ class StackDeployer(object):
         go.add_argument('-v', '--verbose', action='store_true', help='Be more verbose')
         go.add_argument('--no-color', action='store_true', help='Strip colors for basic terminals')
         go.add_argument('--cleanup-lambda', action='store_true', help='Run make clean after uploading Lambda functions')
+        go.add_argument('--version', action='version', version='%(prog)s ' + VERSION, help='Print version number')
 
         opts.add_argument('command', choices=['deploy', 'teardown'], help='Deploy or teardown the environment')
 
