@@ -63,7 +63,7 @@ Quick start
 1. Create a new directory for your project
 2. Copy everything from the `examples` directory to the root of the project
 3. Edit `parameters/dev.yaml` to your needs
-4. Add more stuff under the `cloudformation` directory and include it in `parameters/dev.yaml`
+4. Add more templates with `.cf.yaml` extensions under the `cloudformation` directory and include them in `parameters/dev.yaml`
 
 ### Finally:
 
@@ -125,10 +125,10 @@ You can also tag your stacks/stacksets by defining your tags as a dictionary and
 tags_a: &TAGSA
   testkey1: testvalue1
   testkey2: testvalue2
-  
+
 tags_b: &TAGSB
   testkey3: testvalue3
-  
+
   stacks:
   - name: example-stackset-template
     type: stackset
