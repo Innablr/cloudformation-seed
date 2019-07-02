@@ -60,11 +60,13 @@ ORG_ARN_RE = re.compile(r'^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
 
 
 class DirectoryScanner(object):
-    def scan_directories(self, path: str, glob: str = '*') -> List[Tuple[str, str]]:
+    def scan_directories(self, path: str, glob: str = '**/*') -> List[Tuple[str, str]]:
         u = list()
         for item in Path(path).glob(glob):
             if Path.is_file(item):
-                u.extend([(item.name, str(item))])
+                relative_path = str(item)
+                key = relative_path[len(path):].strip(os.sep)
+                u.extend([(key, relative_path)])
         return u
 
 

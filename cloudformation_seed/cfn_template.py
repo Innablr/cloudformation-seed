@@ -90,7 +90,7 @@ class CloudformationCollection(util.DirectoryScanner):
                     environment_parameters: Dict['str', Any]) -> None:
         self.s3_bucket: Any = s3_bucket
         self.environment_parameters: Dict['str', Any] = environment_parameters
-        self.template_files: List[Tuple[str, str]] = self.scan_directories(path, '*.cf.yaml')
+        self.template_files: List[Tuple[str, str]] = self.scan_directories(path, '**/*.cf.yaml')
         util.log_section('Collecting templates included in the environment')
         self.templates: List[CloudformationTemplate] = [
             CloudformationTemplate(
