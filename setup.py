@@ -1,14 +1,15 @@
 import pathlib
 from setuptools import setup
-import version
+from cloudformation_seed.version import VERSION
 
 HERE = pathlib.Path(__file__).parent
 
 README = (HERE / 'README.md').read_text()
+REQS = (HERE / 'requirements.txt').read_text().split('\n')
 
 setup(
     name='cloudformation-seed',
-    version=version.version,
+    version=VERSION,
     description='Orchestrates large Cloudformation deployments',
     long_description=README,
     long_description_content_type='text/markdown',
@@ -21,12 +22,12 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
     ],
-    packages=['deploy_stack'],
+    packages=['cloudformation_seed'],
     include_package_data=True,
-    install_requires=['boto3>=1.9.64', 'PyYAML>=5.1', 'colorama>=0.4.1'],
+    install_requires=REQS,
     entry_points={
         'console_scripts': [
-            'cloudformation-seed=deploy_stack:main',
+            'cloudformation-seed=cloudformation_seed:main',
         ]
     },
 )

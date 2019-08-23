@@ -1,23 +1,43 @@
 ---
 
+tags_a: &TAGSA
+  testkey1: testvalue1
+  testkey2: testvalue2
+
+tags_b: &TAGSB
+  testkey3: testvalue3
+
+tags_c: &TAGSC
+  testkey4: testvalue4
+
 AllConnectedAccounts: &CONNECTED_ACCOUNTS arn:aws:iam::000000000000:root,arn:aws:iam::111111111111:root,arn:aws:iam::222222222222:root
 
 common-parameters:
   KmsDecryptLambdaArn: !StackOutput my-project-kms-decrypt-lambda.KmsDecryptLambdaArn
 
 stacks:
+  - name: example-stackset-template
+    type: stackset
+    template: sets/example-stackset-template.cf.yaml
+    rollout:
+      - account: '000000000000'
+    tags: *TAGSC
+
   - name: my-project-kms-decrypt-lambda
     template: support/kms-parameters-lambda.cf.yaml
     parameters:
       LambdaSourceS3Key: !LambdaZip kmsParameters.zip
+    tags: *TAGSA
 
   - name: centralservices-s3-watchdog-lambda
     template: support/s3-watchdog-lambda.cf.yaml
+    tags: *TAGSA
 
   - name: centralservices-bucket-policy
-    template: centralservices/bucket-policy.cf.yaml
+    template: support/bucket-policy.cf.yaml
     parameters:
       ConnectedAccountArns: *CONNECTED_ACCOUNTS
+    tags: *TAGSB
 
   - name: my-project
     template: my-project.cf.yaml
@@ -26,6 +46,7 @@ stacks:
       PrivateSubnets: subnet-00000000,subnet-00000000
       ServerInstanceType: t2.small
       ServerAmi: ami-9d58b6ff
+    tags: *TAGSC
 
 
 # vim: ts=2 sw=2 expandtab

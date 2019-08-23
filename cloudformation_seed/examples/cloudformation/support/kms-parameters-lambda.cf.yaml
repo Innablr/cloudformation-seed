@@ -56,7 +56,7 @@ Resources:
       Handler: index.handler
       MemorySize: 128
       Role: !GetAtt KmsDecryptLambdaExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs8.10
       Timeout: 15
 
 Outputs:

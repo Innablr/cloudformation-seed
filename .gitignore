@@ -1,4 +1,5 @@
 *.egg-info/**
+.eggs/
 build/**
 dist/**
 *.pyc
@@ -6,3 +7,7 @@ dist/**
 .idea
 .vscode
 .DS_Store
+**/node_modules
+.python-version
+*.patch
+/tmp
