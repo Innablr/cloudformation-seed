@@ -1,6 +1,6 @@
 import pathlib
 from setuptools import setup
-import version
+from cloudformation_seed.version import VERSION
 
 HERE = pathlib.Path(__file__).parent
 
@@ -9,7 +9,7 @@ REQS = (HERE / 'requirements.txt').read_text().split('\n')
 
 setup(
     name='cloudformation-seed',
-    version=version.version,
+    version=VERSION,
     description='Orchestrates large Cloudformation deployments',
     long_description=README,
     long_description_content_type='text/markdown',
