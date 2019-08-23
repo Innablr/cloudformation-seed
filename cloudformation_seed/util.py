@@ -1,5 +1,5 @@
 from typing import List, Tuple, Dict, Any, Optional, Union
-
+from pathlib import Path
 import logging
 import boto3
 import re
@@ -60,11 +60,13 @@ ORG_ARN_RE = re.compile(r'^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
 
 
 class DirectoryScanner(object):
-    def scan_directories(self, path: str) -> List[Tuple[str, str]]:
+    def scan_directories(self, path: str, glob: str = '**/*') -> List[Tuple[str, str]]:
         u = list()
-        for root, _, files in os.walk(path):
-            relative_root = root.replace(path, '').strip(os.sep)
-            u.extend([(f'{relative_root}/{f}'.replace(os.sep, '/').strip('/'), os.path.join(root, f)) for f in files])
+        for item in Path(path).glob(glob):
+            if Path.is_file(item):
+                relative_path = str(item)
+                key = relative_path[len(path):].strip(os.sep)
+                u.extend([(key, relative_path)])
         return u
 
 
