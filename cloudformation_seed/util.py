@@ -171,7 +171,7 @@ class StackParameters(object):
         rollout = self.stack_definition['rollout']
         for xr in rollout:
             xr['regions'] = set(xr.get('regions', {c.meta.region_name}))
-            xr['override'] = [{'ParameterKey': k, 'ParameterValue': str(v)}
+            xr['override'] = [{'ParameterKey': k, 'ParameterValue': str(v) if not isinstance(v, list) else ','.join(v)}
                 for k, v in xr.get('override', dict()).items() if v is not None]
         return rollout
 
@@ -285,6 +285,8 @@ class StackParameters(object):
         for source, xv in (('SPECIFIC', specific_val), ('COMMON', common_val),
                 ('BUILTIN', self.get_special_parameter_value(param_name)), ('ABSENT', None)):
             if xv is not None or source == 'ABSENT':
+                if isinstance(xv, list):
+                    xv = ','.join(xv)
                 return source, xv
 
     def get_special_parameter_value(self, param_name):
