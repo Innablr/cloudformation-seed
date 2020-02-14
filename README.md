@@ -156,7 +156,10 @@ stacks:
     template: centralservices/r53-zone.cf.yaml           # CF template relative to cloudformation directory
     parameters:                                          # Parameters to the CF stack
       ManagedZoneDomainName: in.cld
-      ManagingAccountArns: arn:aws:iam::000000000000:root
+      ManagingAccountArns:                               # List parameters turn into comma-separated values
+        - arn:aws:iam::000000000000:root
+        - arn:aws:iam::111111111111:root
+        - arn:aws:iam::222222222222:root
 
   - name: in-cld-provisioning                            # name of CF stack, INSTALLATION_NAME will be prepended
     template: centralservices/r53-provisioning.cf.yaml   # CF template relative to cloudformation directory
