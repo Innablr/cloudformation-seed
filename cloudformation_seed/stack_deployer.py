@@ -83,8 +83,8 @@ class StackDeployer(object):
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
         gc.add_argument('-o', '--org-arn', help='AWS Organisation ARN to allow S3 bucket access')
         gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
-        gc.add_argument('-p', '--param-overrides', type=self.parse_override, metavar='stack-name:VarName=value', nargs='+',
-            help='Override template parameters, if stack-name omitted VarName is overriden for every stack')
+        gc.add_argument('-p', '--param-overrides', type=self.parse_override, metavar='stack-name:VarName=value',
+            nargs='+', help='Override template parameters, if stack-name omitted VarName is overriden for every stack')
 
         gp = opts.add_argument_group('Paths')
         gp.add_argument('--templates-dir', default='cloudformation', help='Relative path to CF templates')
