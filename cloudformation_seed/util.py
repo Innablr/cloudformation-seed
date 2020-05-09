@@ -141,6 +141,7 @@ class StackParameters(object):
             if self.aws_org_arn is not None else None
         self.runtime_environment = options.runtime_environment
         self.parameters_dir = options.parameters_dir
+        self.param_overrides = options.param_overrides or list()
 
         self.parameters_loader = self.configure_parameters_loader()
         self.STACK_OUTPUT_RE = \
@@ -282,8 +283,11 @@ class StackParameters(object):
     def compute_parameter_value(self, param_name):
         common_val = self.common_parameters.get(param_name)
         specific_val = self.specific_parameters.get(param_name)
-        for source, xv in (('SPECIFIC', specific_val), ('COMMON', common_val),
-                ('BUILTIN', self.get_special_parameter_value(param_name)), ('ABSENT', None)):
+        for source, xv in (('OVERRIDE', self.get_parameter_override(param_name)),
+                ('SPECIFIC', specific_val),
+                ('COMMON', common_val),
+                ('BUILTIN', self.get_special_parameter_value(param_name)),
+                ('ABSENT', None)):
             if xv is not None or source == 'ABSENT':
                 if isinstance(xv, list):
                     xv = ','.join(xv)
@@ -304,6 +308,12 @@ class StackParameters(object):
             return self.aws_org_id
         if param_name == 'AWSOrganizationARN':
             return self.aws_org_arn
+
+    def get_parameter_override(self, param_name):
+        for xp in self.param_overrides:
+            if xp[0] == self.stack_definition['name'] or xp[0] is None:
+                if xp[1] == param_name:
+                    return xp[2]
 
     def parse_parameters(self):
         p = dict()
