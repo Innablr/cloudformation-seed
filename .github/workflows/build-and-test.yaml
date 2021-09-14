@@ -24,4 +24,4 @@ jobs:
           flake8
       - name: Run tests
         run: |
-          python setup.py test
+          python -m unittest -v
