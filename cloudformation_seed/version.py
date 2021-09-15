@@ -1,4 +1,1 @@
-import os
-from pathlib import Path
-
-VERSION = Path(os.path.join('..', 'version.txt')).read_text().strip()
+VERSION = '0.0.0-develop'
