@@ -179,6 +179,7 @@ class StackParameters(object):
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):
             pass
+        ParametersLoader.add_constructor('!Include', self.include_file)
         ParametersLoader.add_constructor('!Builtin', self.set_builtin)
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Key', self.set_cloudformation_template_s3_key)
@@ -190,6 +191,13 @@ class StackParameters(object):
         ParametersLoader.add_constructor('!ArtifactRepo', self.set_artifact_repo)
         ParametersLoader.add_constructor('!ArtifactImage', self.set_artifact_image)
         return ParametersLoader
+
+    def include_file(self, loader, node):
+        param_name = loader.construct_scalar(node)
+        log.debug(f'Loading include file {param_name}...')
+        val = self.read_parameters_yaml(os.path.join(self.parameters_dir, param_name))
+        log.debug(f'Successfully read include file {param_name}')
+        return val
 
     def set_builtin(self, loader, node):
         param_name = loader.construct_scalar(node)

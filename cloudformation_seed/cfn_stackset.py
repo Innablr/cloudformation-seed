@@ -15,7 +15,17 @@ from botocore.exceptions import ClientError
 log = logging.getLogger('stack-deployer')
 
 
-class StackSetRollout:
+class StackSetOrganizationRollout(object):
+    def __init(self, stack_name, rollout_config):
+        self.stack_name = stack_name
+        self.rollout_config = rollout_config
+        self.stack_instances = None
+        self.create = list()
+        self.update = list()
+        self.delete = list()
+
+
+class StackSetRollout(object):
     def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
         self.rollout_config = rollout_config
