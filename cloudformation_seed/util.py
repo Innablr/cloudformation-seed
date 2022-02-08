@@ -203,6 +203,7 @@ class StackParameters(object):
             pass
         ParametersLoader.add_constructor('!Include', self.include_file)
         ParametersLoader.add_constructor('!Builtin', self.set_builtin)
+        ParametersLoader.add_constructor('!EnvironmentVariable', self.set_env_var)
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Key', self.set_cloudformation_template_s3_key)
         ParametersLoader.add_constructor('!CloudformationTemplateS3Url', self.set_cloudformation_template_url)
@@ -228,6 +229,15 @@ class StackParameters(object):
         if val is None:
             raise InvalidStackConfiguration(f'Unsupported builtin parameter [{param_name}]')
         return val
+
+    def set_env_var(self, loader, node):
+        var_name = loader.construct_scalar(node)
+        log.debug(f'Looking up environment variable {var_name}...')
+        try:
+            val = os.environ[var_name]
+            return val
+        except KeyError:
+            raise InvalidStackConfiguration(f'Environment variable [{var_name}] is not set')
 
     def set_lambda_zip(self, loader, node):
         zip_name = loader.construct_scalar(node)
