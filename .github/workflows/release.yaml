@@ -50,6 +50,9 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
         run: |
           twine upload --skip-existing dist/*
+      - name: Pause until the PyPI release becomes available
+        run: |
+          sleep 5
   docker-build-and-publish:
     runs-on: ubuntu-latest
     needs: checkout-test-and-wheel
