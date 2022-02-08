@@ -161,8 +161,17 @@ class StackParameters(object):
 
         self.stackset_admin_role_arn: Optional[str] = self.stack_definition.get('admin_role_arn')
         self.stackset_exec_role_name: Optional[str] = self.stack_definition.get('exec_role_name')
+        self.stackset_call_as: Optional[str] = self.stack_definition.get('call_as', 'self')
+        if self.stackset_call_as not in ('self', 'delegated_admin'):
+            raise InvalidStackConfiguration(f'call_as for [{self.stack_definition["name"]}]'
+                f' must be "self" or "delegated_admin", not [{self.stackset_call_as}]')
         self.operation_preferences: Dict[str, Union[str, List[str]]] = \
                 self.stack_definition.get('operation_preferences', {})
+        self.rollout_strategy: str = self.stack_definition.get('rollout_strategy', 'accounts')
+        if self.rollout_strategy not in ('accounts', 'organization'):
+            raise InvalidStackConfiguration(f'rollout_strategy for [{self.stack_definition["name"]}]'
+                f' must be "accounts" or "organization", not [{self.rollout_strategy}]')
+        self.rollout_autodeploy: Dict[str, bool] = self.stack_definition.get('rollout_autodeploy', {'enable': False})
         self.rollout = self.format_rollout()
 
     def format_rollout(self):
@@ -175,6 +184,18 @@ class StackParameters(object):
             xr['override'] = [{'ParameterKey': k, 'ParameterValue': str(v) if not isinstance(v, list) else ','.join(v)}
                 for k, v in xr.get('override', dict()).items() if v is not None]
         return rollout
+
+    def format_rollout_autodeploy(self):
+        if self.rollout_strategy != 'organization':
+            return dict()
+        rollout_autodeploy = {
+            'AutoDeployment': {
+                'Enabled': self.rollout_autodeploy['enable']
+            }
+        }
+        if self.rollout_autodeploy['enable']:
+            rollout_autodeploy['AutoDeployment']['RetainStacksOnAccountRemoval'] = self.rollout_autodeploy.get('retain_on_removal', False)
+        return rollout_autodeploy
 
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):

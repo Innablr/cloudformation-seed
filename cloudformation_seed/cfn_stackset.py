@@ -16,14 +16,94 @@ log = logging.getLogger('stack-deployer')
 
 
 class StackSetOrganizationRollout(object):
-    def __init(self, stack_name, rollout_config):
+    def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
         self.rollout_config = rollout_config
         self.strategy = 'organization'
-        self.stack_instances = None
-        self.create = list()
-        self.update = list()
-        self.delete = list()
+        self.stack_instances_by_ou = None
+        self.create_ou = list()
+        self.update_ou = list()
+        self.delete_ou = list()
+
+    def retrieve(self) -> None:
+        c = util.session.client('cloudformation')
+        log.info('Loading stack instances...')
+        r = c.list_stack_instances(StackSetName=self.stack_name)
+        self.stack_instances_by_ou = dict()
+        for xi in r['Summaries']:
+            if 'OrganizationalUnitId' in xi:
+                self.stack_instances_by_ou.setdefault(xi['OrganizationalUnitId'], set()).add(xi['Region'])
+        log.info(f'Found {Fore.GREEN}{sum(len(xv) for xv in self.stack_instances_by_ou.values())}{Style.RESET_ALL} '
+            f'stack instances in {Fore.MAGENTA}{len(self.stack_instances_by_ou)}{Style.RESET_ALL} OUs')
+
+    def find_or_add_ou(self, where, ou):
+        coll = self.create_ou if where == 'create' else self.update_ou
+        matches = [xa for xa in coll if xa['ou'] == ou['ou'] and xa['override'] == ou['override']]
+        try:
+            return matches[0]
+        except IndexError:
+            new_ou = copy.copy(ou)
+            new_ou['regions'] = set()
+            coll.append(new_ou)
+            return new_ou
+
+    def ou_region_need_update(self, ou_id, region, overrides):
+        return True
+
+    def set_create_or_update_ou(self, rollout_item):
+        ou_id = rollout_item['ou']
+        if ou_id not in self.stack_instances_by_ou and len(rollout_item['regions']) > 0:
+            log.debug(f'Stackset will create instances in OU '
+                f'{Fore.GREEN}{ou_id}{Style.RESET_ALL} regions '
+                f'{Fore.GREEN}{rollout_item["regions"]}{Style.RESET_ALL}')
+            self.create_ou.append(copy.copy(rollout_item))
+            return
+        for region in rollout_item['regions']:
+            if region in self.stack_instances_by_ou[ou_id]:
+                if not self.ou_region_need_update(ou_id, region, rollout_item['override']):
+                    log.info(f'Stack instance in OU '
+                        f'{Fore.GREEN}{ou_id}{Style.RESET_ALL} '
+                        f'region {Fore.GREEN}{region}{Style.RESET_ALL} is not updating')
+                    continue
+                log.debug(f'Stackset will update instance in OU {ou_id} region {region}')
+                rollout_ou = self.find_or_add_ou('update', rollout_item)
+            else:
+                log.debug(f'Stackset will create instance in OU {ou_id} region {region}')
+                rollout_ou = self.find_or_add_ou('create', rollout_item)
+            rollout_ou['regions'].add(region)
+
+    def set_delete_ou(self, ou, regions):
+        rollout_ous = [xa for xa in self.rollout_config if xa['ou'] == ou]
+        rollout_regions = set.union(*[xa['regions'] for xa in rollout_ous]) if len(rollout_ous) > 0 else set()
+        delete_regions = regions - rollout_regions
+        if len(delete_regions) > 0:
+            log.debug(f'OU {ou} is set for deletion in regions {delete_regions}')
+            self.delete_ou.append({
+                'ou': ou,
+                'regions': delete_regions,
+                'override': dict()
+            })
+
+    def collate_instances_create_update(self):
+        self.create_ou.clear()
+        self.update_ou.clear()
+        self.retrieve()
+        for rollout_item in self.rollout_config:
+            self.set_create_or_update_ou(rollout_item)
+
+    def collate_instances_delete(self):
+        self.delete_ou.clear()
+        self.retrieve()
+        for ou, regions in self.stack_instances_by_ou.items():
+            self.set_delete_ou(ou, regions)
+
+    def rollout_delete(self):
+        self.collate_instances_delete()
+        return self.delete_ou
+
+    def rollout_create_update(self):
+        self.collate_instances_create_update()
+        return self.create_ou, self.update_ou
 
 class StackSetRollout(object):
     def __init__(self, stack_name, rollout_config):
@@ -98,7 +178,7 @@ class StackSetRollout(object):
                 rollout_account = self.find_or_add_account('create', account)
             rollout_account['regions'].add(region)
 
-    def set_delete_account(self, account, regions) -> None:
+    def set_delete_account(self, account, regions):
         rollout_accounts = [xa for xa in self.rollout_config if xa['account'] == account]
         rollout_regions = set.union(*[xa['regions'] for xa in rollout_accounts]) if len(rollout_accounts) > 0 else set()
         delete_regions = regions - rollout_regions
@@ -234,10 +314,10 @@ class CloudformationStackSet(object):
     def set_parameters(self, parameters: util.StackParameters) -> None:
         self.stack_parameters = parameters
         if self.stack_parameters.rollout is not None:
-            if self.stack_parameters.rollout.get('strategy', 'accounts'):
-                self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
-            else:
+            if self.stack_parameters.rollout_strategy == 'organization':
                 self.stackset_rollout = StackSetOrganizationRollout(self.stack_name, self.stack_parameters.rollout)
+            else:
+                self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = util.session.client('cloudformation')
@@ -281,10 +361,11 @@ class CloudformationStackSet(object):
             'TemplateURL': self.template.template_url,
             'Parameters': self.stack_parameters.format_parameters(),
             'Capabilities': self.caps,
-            'Tags': self.formatted_stack_tags
+            'Tags': self.formatted_stack_tags,
+            'PermissionModel': 'SERVICE_MANAGED' if self.stackset_rollout.strategy == 'organization' else 'SELF_MANAGED'
         }
-
         params.update(self.stack_parameters.format_role_pair())
+        params.update(self.stack_parameters.format_rollout_autodeploy())
         log.info(f'Creating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
             f' {Fore.GREEN}{self.template.template_url}{Style.RESET_ALL}')
         c.create_stack_set(**params)
@@ -326,7 +407,6 @@ class CloudformationStackSet(object):
         if not self.stackset_need_update():
             log.info('No changes to stackset template or parameters. Skipping stackset update')
             return
-
         p = self.stack_parameters.format_parameters()
         c = util.session.client('cloudformation')
         log.info(f'Updating stackset {Fore.GREEN}{self.stack_name}{Style.RESET_ALL} with template'
@@ -339,10 +419,11 @@ class CloudformationStackSet(object):
             'TemplateURL': self.template.template_url,
             'Parameters': p,
             'Capabilities': self.caps,
-            'Tags': self.formatted_stack_tags
+            'Tags': self.formatted_stack_tags,
+            'PermissionModel': 'SERVICE_MANAGED' if self.stackset_rollout.strategy == 'organization' else 'SELF_MANAGED'
         }
-
         params.update(self.stack_parameters.format_role_pair())
+        params.update(self.stack_parameters.format_rollout_autodeploy())
         params.update(self.stack_parameters.format_operation_preferences())
         c.update_stack_set(**params)
         self.wait_pending_operations()
@@ -351,7 +432,7 @@ class CloudformationStackSet(object):
         if self.existing_stack is None:
             self.create_stackset()
         else:
-            self.cleanup_stack_instances()
+            self.cleanup_stackset()
             self.update_stackset()
         self.stack = self.find_existing_stackset()
         self.rollout_stackset()
@@ -368,6 +449,23 @@ class CloudformationStackSet(object):
     @retry_pending
     def cleanup_organization(self) -> None:
         c = util.session.client('cloudformation')
+        delete_items = self.stackset_rollout.rollout_delete()
+        log.debug(f'Delete instances: {delete_items}')
+        for xg in delete_items:
+            log.info(f'Deleting stack instances for OU {xg["ou"]} '
+                f'in regions {xg["regions"]}...')
+            params = {
+                'StackSetName': self.stack_name,
+                'DeploymentTargets': {},
+                'Regions': list(xg["regions"]),
+                'RetainStacks': False
+            }
+            params['DeploymentTargets'].setdefault('OrganizationalUnitIds', list()).append(xg['ou'])
+            if self.stack_parameters.stackset_call_as == 'delegated_admin':
+                params['CallAs'] = 'DELEGATED_ADMIN'
+            params.update(self.stack_parameters.format_operation_preferences())
+            c.delete_stack_instances(**params)
+            self.wait_pending_operations()
 
     @retry_pending
     def cleanup_stack_instances(self) -> None:
@@ -400,6 +498,39 @@ class CloudformationStackSet(object):
     @retry_pending
     def rollout_organization(self) -> None:
         c = util.session.client('cloudformation')
+        create_items, update_items = self.stackset_rollout.rollout_create_update()
+        log.debug(f'Update instances: {update_items}')
+        log.debug(f'Create instances: {create_items}')
+        for xg in create_items:
+            params = {
+                'StackSetName': self.stack_name,
+                'DeploymentTargets': {},
+                'Regions': list(xg["regions"]),
+                'ParameterOverrides': xg['override']
+            }
+            log.info(f'Creating new stack instances for OU {xg["ou"]} '
+                f'in regions {xg["regions"]}...')
+            params['DeploymentTargets'].setdefault('OrganizationalUnitIds', list()).append(xg['ou'])
+            if self.stack_parameters.stackset_call_as == 'delegated_admin':
+                params['CallAs'] = 'DELEGATED_ADMIN'
+            params.update(self.stack_parameters.format_operation_preferences())
+            c.create_stack_instances(**params)
+            self.wait_pending_operations()
+        for xg in update_items:
+            params = {
+                'StackSetName': self.stack_name,
+                'DeploymentTargets': {},
+                'Regions': list(xg["regions"]),
+                'ParameterOverrides': xg['override']
+            }
+            log.info(f'Updating stack instances for OU {xg["ou"]} '
+                f'in regions {xg["regions"]}...')
+            params['DeploymentTargets'].setdefault('OrganizationalUnitIds', list()).append(xg['ou'])
+            if self.stack_parameters.stackset_call_as == 'delegated_admin':
+                params['CallAs'] = 'DELEGATED_ADMIN'
+            params.update(self.stack_parameters.format_operation_preferences())
+            c.update_stack_instances(**params)
+            self.wait_pending_operations()
 
     @retry_pending
     def rollout_accounts(self) -> None:
