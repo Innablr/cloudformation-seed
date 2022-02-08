@@ -1,6 +1,7 @@
 Cloudformation Seed
 ======
-![Build Status](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yml/badge.svg?branch=master)
+[![Build and test](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml/badge.svg?branch=master&event=pull_request)](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml)
+
 [![PyPI version shields.io](https://img.shields.io/pypi/v/cloudformation-seed.svg)](https://pypi.python.org/pypi/cloudformation-seed/)
 
 Preface
