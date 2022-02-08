@@ -15,10 +15,22 @@ from botocore.exceptions import ClientError
 log = logging.getLogger('stack-deployer')
 
 
-class StackSetRollout:
+class StackSetOrganizationRollout(object):
+    def __init(self, stack_name, rollout_config):
+        self.stack_name = stack_name
+        self.rollout_config = rollout_config
+        self.strategy = 'organization'
+        self.stack_instances = None
+        self.create = list()
+        self.update = list()
+        self.delete = list()
+
+
+class StackSetRollout(object):
     def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
         self.rollout_config = rollout_config
+        self.strategy = 'accounts'
         self.stack_instances = None
         self.create = list()
         self.update = list()
@@ -223,7 +235,10 @@ class CloudformationStackSet(object):
     def set_parameters(self, parameters: util.StackParameters) -> None:
         self.stack_parameters = parameters
         if self.stack_parameters.rollout is not None:
-            self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
+            if self.stack_parameters.rollout.get('strategy', 'accounts'):
+                self.stackset_rollout = StackSetRollout(self.stack_name, self.stack_parameters.rollout)
+            else:
+                self.stackset_rollout = StackSetOrganizationRollout(self.stack_name, self.stack_parameters.rollout)
 
     def find_existing_stackset(self) -> Optional[Dict[str, Any]]:
         c = util.session.client('cloudformation')
@@ -340,14 +355,24 @@ class CloudformationStackSet(object):
             self.cleanup_stack_instances()
             self.update_stackset()
         self.stack = self.find_existing_stackset()
-        self.rollout_accounts()
+        self.rollout_stackset()
+
+    def cleanup_stackset(self):
+        if self.stackset_rollout is None:
+            log.info('Rollout configuration is missing, not cleaning up stack instances')
+            return
+        if self.stackset_rollout.strategy == 'organization':
+            self.cleanup_organization()
+        else:
+            self.cleanup_stack_instances()
+
+    @retry_pending
+    def cleanup_organization(self) -> None:
+        c = util.session.client('cloudformation')
 
     @retry_pending
     def cleanup_stack_instances(self) -> None:
         c = util.session.client('cloudformation')
-        if self.stackset_rollout is None:
-            log.info('Rollout configuration is missing, not cleaning up stack instances')
-            return
         delete_groups = self.stackset_rollout.rollout_delete()
         log.debug(f'Delete instances: {delete_groups}')
         for xg in delete_groups:
@@ -364,12 +389,22 @@ class CloudformationStackSet(object):
                 c.delete_stack_instances(**params)
                 self.wait_pending_operations()
 
-    @retry_pending
-    def rollout_accounts(self) -> None:
-        c = util.session.client('cloudformation')
+    def rollout_stackset(self):
         if self.stackset_rollout is None:
             log.info('Rollout configuration is missing, not deploying stack instances')
             return
+        if self.stackset_rollout.strategy == 'organization':
+            self.rollout_organization()
+        else:
+            self.rollout_accounts()
+
+    @retry_pending
+    def rollout_organization(self) -> None:
+        c = util.session.client('cloudformation')
+
+    @retry_pending
+    def rollout_accounts(self) -> None:
+        c = util.session.client('cloudformation')
         create_groups, update_groups = self.stackset_rollout.rollout_create_update()
         log.debug(f'Update instances: {update_groups}')
         log.debug(f'Create instances: {create_groups}')
