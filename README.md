@@ -1,6 +1,7 @@
 Cloudformation Seed
 ======
-[![Build Status](https://travis-ci.org/Innablr/cloudformation-seed.svg?branch=master)](https://travis-ci.org/Innablr/cloudformation-seed)
+[![Build and test](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml/badge.svg)](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml)
+[![PyPI version shields.io](https://img.shields.io/pypi/v/cloudformation-seed.svg)](https://pypi.python.org/pypi/cloudformation-seed/)
 
 Preface
 ------
@@ -26,6 +27,44 @@ Requirements
 ------
 
 You need a Mac, Linux or Windows machine/VM to run the Seed. On Windows it runs natively, as well as in WSL/WSL2.
+
+Installation
+------
+
+Install it from PyPI:
+```
+$ pip install cloudformation-seed
+$ cloudformation-seed --version
+```
+
+Or use a docker image from ghcr.io (use the version number instead of `latest` for stability):
+```
+$ docker pull ghcr.io/innablr/cloudformation-seed:latest
+$ docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
+```
+
+Quick start
+------
+
+### First things first:
+
+1. Create a new directory for your project
+2. Copy everything from the `examples` directory to the root of the project
+3. Edit `parameters/dev.yaml` to your needs
+4. Add more templates with `.cf.yaml` extensions under the `cloudformation` directory and include them in `parameters/dev.yaml`
+
+### Finally:
+
+Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment. Run `cloudformation-seed -c my-project -i x0 -e dev -d my.domain.cld deploy`
+
+### Optionally:
+
+Take the dockerfiles and makefiles from the `examples` directory and massage them around to suit your needs.
+
+Deep dive
+------
+
+### Mandatory Cloudformation stack parameters
 
 Every Cloudformation template you use has to have 4 mandatory parameters that will be supplied by the Seed:
 
@@ -57,27 +96,6 @@ Parameters:
     Type: String
     Description: Route53 zone domain that represents the environment
 ```
-
-Quick start
-------
-
-### First things first:
-
-1. Create a new directory for your project
-2. Copy everything from the `examples` directory to the root of the project
-3. Edit `parameters/dev.yaml` to your needs
-4. Add more templates with `.cf.yaml` extensions under the `cloudformation` directory and include them in `parameters/dev.yaml`
-
-### Finally:
-
-Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment. Run `cloudformation-seed -c my-project -i x0 -e dev -d my.domain.cld deploy`
-
-### Optionally:
-
-Take the dockerfiles and makefiles from the `examples` directory and massage them around to suit your needs.
-
-Deep dive
-------
 
 ### Seed bucket
 
@@ -288,11 +306,13 @@ In the environment configuration you can use the following tags in stack paramet
 
 5. `!Builtin TemplatesS3Bucket` - returns the value of a builtin parameter. This allows you to pass the builtin Seed parameters like `TemplatesS3Bucket` as different Cloudformation parameter names should you need to do so.
 
-6. `!SSMParameterDirect` - reads the value of the specified SSM parameter prefixed with `/product_name/installation_name/` from SSM and pushes it into the Cloudformation stack
+6. `!EnvironmentVariable DOMAIN_NAME` - returns the value of an environment variable. If the variable is not set the deployment will abort.
 
-6. `!SSMParameterDeclared` - instead of reading the SSM parameter value this directive will construct its name prefixed with `/product_name/installation_name/` and pass it down to the Cloudformation stack, so you can use Cloudformation native SSM parameter handling
+7. `!SSMParameterDirect` - reads the value of the specified SSM parameter prefixed with `/product_name/installation_name/` from SSM and pushes it into the Cloudformation stack
 
-4. `!ArtifactVersion`, `!ArtifactRepo` and `!ArtifactImage` - these three tags are used together with a release manifest in release management
+8. `!SSMParameterDeclared` - instead of reading the SSM parameter value this directive will construct its name prefixed with `/product_name/installation_name/` and pass it down to the Cloudformation stack, so you can use Cloudformation native SSM parameter handling
+
+9. `!ArtifactVersion`, `!ArtifactRepo` and `!ArtifactImage` - these three tags are used together with a release manifest in release management
 
 Release management
 ------
