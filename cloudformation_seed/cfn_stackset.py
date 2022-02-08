@@ -25,7 +25,6 @@ class StackSetOrganizationRollout(object):
         self.update = list()
         self.delete = list()
 
-
 class StackSetRollout(object):
     def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
