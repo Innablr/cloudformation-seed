@@ -28,6 +28,20 @@ Requirements
 
 You need a Mac, Linux or Windows machine/VM to run the Seed. On Windows it runs natively, as well as in WSL/WSL2.
 
+Installation
+------
+
+Install it from PyPI:
+```
+$ pip install cloudformation-seed
+$ cloudformation-seed --version
+```
+
+Or use a docker image from ghcr.io (use the version number instead of `latest` for stability):
+```
+$ docker pull ghcr.io/innablr/cloudformation-seed:latest
+$ docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
+```
 
 Quick start
 ------
