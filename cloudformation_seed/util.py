@@ -194,7 +194,8 @@ class StackParameters(object):
             }
         }
         if self.rollout_autodeploy['enable']:
-            rollout_autodeploy['AutoDeployment']['RetainStacksOnAccountRemoval'] = self.rollout_autodeploy.get('retain_on_removal', False)
+            rollout_autodeploy['AutoDeployment']['RetainStacksOnAccountRemoval'] = \
+                self.rollout_autodeploy.get('retain_on_removal', False)
         return rollout_autodeploy
 
     def configure_parameters_loader(self):

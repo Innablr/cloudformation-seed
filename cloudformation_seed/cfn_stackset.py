@@ -105,6 +105,7 @@ class StackSetOrganizationRollout(object):
         self.collate_instances_create_update()
         return self.create_ou, self.update_ou
 
+
 class StackSetRollout(object):
     def __init__(self, stack_name, rollout_config):
         self.stack_name = stack_name
