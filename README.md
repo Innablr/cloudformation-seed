@@ -202,6 +202,7 @@ stacks:
     pilot:                                               # when StackSet is updated only update instances in these accounts
       accounts:
         - '000000000000'
+    rollout_strategy: accounts                           # set to organization for AWS Organisation-managed stackset
     rollout:                                             # manage StackSet instances
       - account: '000000000000'
         override:                                        # parameter override
@@ -229,6 +230,7 @@ stacks:
       SSMLogsLambdaS3Key: !LambdaZip ssmLogsConfig.zip
       SAMLUsername: *SAML_USERNAME
       SAMLProviderName: *SAML_PROVIDER_NAME
+    call_as: self                                        # delegated_admin is also supported
     rollout_strategy: organization
     rollout_autodeploy:
       enable: true
