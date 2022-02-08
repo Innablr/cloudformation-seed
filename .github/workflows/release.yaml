@@ -49,7 +49,7 @@ jobs:
           TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
         run: |
-          twine upload dist/*
+          twine upload --skip-existing dist/*
   docker-build-and-publish:
     runs-on: ubuntu-latest
     needs: checkout-test-and-wheel
