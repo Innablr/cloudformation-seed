@@ -387,6 +387,7 @@ class StackParameters(object):
         tolerance = self.operation_preferences.get('failure_tolerance')
         max_concurrent = self.operation_preferences.get('max_concurrent')
         region_order = self.operation_preferences.get('region_order')
+        region_concurrency_type = self.operation_preferences.get('region_concurrency_type')
         if tolerance is not None:
             if isinstance(tolerance, int):
                 prefs['FailureToleranceCount'] = tolerance
@@ -419,4 +420,11 @@ class StackParameters(object):
             else:
                 raise InvalidStackConfiguration('region_order in operation_preferences must be a list '
                     f'on stack {self.template.name}')
+        if region_concurrency_type is not None:
+            if region_concurrency_type not in ('PARALLEL', 'SEQUENTIAL'):
+                raise InvalidStackConfiguration('region_concurrency_type in operation_preferences must be '
+                    f'either PARALLEL or SEQUENTIAL on stack {self.template.name}')
+            prefs['RegionConcurrencyType'] = region_concurrency_type
+            log.info(f'Setting region concurrency type to '
+                f'{Fore.GREEN}{prefs["RegionConcurrencyType"]}{Style.RESET_ALL}')
         return {'OperationPreferences': prefs}
