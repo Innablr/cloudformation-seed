@@ -19,7 +19,7 @@ class CloudformationTemplateBody:
 
     @property
     def parameters(self) -> Dict[str, Dict[str, str]]:
-        return self.body['Parameters']
+        return self.body.get('Parameters', dict())
 
     def calculate_checksum(self, text) -> str:
         sha1sum = hashlib.sha1()
