@@ -1,0 +1,17 @@
+---
+rollout:
+  - account: &ACCOUNT_ID '111111111111'
+
+stacks:
+  test-stackset:
+    account: *ACCOUNT_ID
+    regions:
+      - ap-southeast-1
+    override:
+      LogGroupPrefix: 'tenant1'
+  another-test-stackset:
+    account: *ACCOUNT_ID
+    regions:
+      - ap-southeast-1
+    override:
+      LogGroupPrefix: 'tenant1'

@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Test stackset
+
+Parameters:
+  TemplatesS3Bucket:
+    Type: String
+    Description: S3 Bucket with the components templates
+  InstallationName:
+    Type: String
+    Description: Unique stack installation name
+  RuntimeEnvironment:
+    Type: String
+    Description: The runtime environment config tag
+    Default: dev
+  Route53ZoneDomain:
+    Type: String
+    Description: Route53 zone domain that represents the environment
+  LogGroupPrefix:
+    Type: String
+    Description: Some string for a dummy loggroup
+
+Resources:
+  VPCFlowLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${LogGroupPrefix}-group-${InstallationName}
