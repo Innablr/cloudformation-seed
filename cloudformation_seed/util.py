@@ -1,10 +1,13 @@
+from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any, Optional, Union
 from pathlib import Path
+import types
 import logging
 import boto3
 import re
 import os
 import yaml
+import objectpath
 from colorama import Fore, Style
 import copy
 
@@ -45,14 +48,8 @@ session = boto3.Session()
 
 
 class InvalidParameters(Exception): pass            # noqa E701,E302
-
-
 class InvalidStackConfiguration(Exception): pass    # noqa E701,E302
-
-
 class DeploymentFailed(Exception): pass             # noqa E701,E302
-
-
 class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
@@ -152,6 +149,7 @@ class StackParameters(object):
                 os.path.join(self.parameters_dir,
                 f'{self.runtime_environment}.yaml')
             )
+
         self.common_parameters = self.environment_parameters.get('common-parameters', dict())
         self.stack_definition = [xs for xs in self.environment_parameters['stacks']
                                     if xs['name'] == self.template.name].pop()
@@ -201,7 +199,8 @@ class StackParameters(object):
     def configure_parameters_loader(self):
         class ParametersLoader(yaml.Loader):
             pass
-        ParametersLoader.add_constructor('!Include', self.include_file)
+        ParametersLoader.add_constructor('!ObjectPath', self.run_objectpath)
+        ParametersLoader.add_constructor('!IncludeAll', self.include_files)
         ParametersLoader.add_constructor('!Builtin', self.set_builtin)
         ParametersLoader.add_constructor('!EnvironmentVariable', self.set_env_var)
         ParametersLoader.add_constructor('!LambdaZip', self.set_lambda_zip)
@@ -215,11 +214,56 @@ class StackParameters(object):
         ParametersLoader.add_constructor('!ArtifactImage', self.set_artifact_image)
         return ParametersLoader
 
-    def include_file(self, loader, node):
-        param_name = loader.construct_scalar(node)
-        log.debug(f'Loading include file {param_name}...')
-        val = self.read_parameters_yaml(os.path.join(self.parameters_dir, param_name))
-        log.debug(f'Successfully read include file {param_name}')
+    def run_objpath_core(self, data, objpath):
+        r = objectpath.Tree(data).execute(objpath)
+        if isinstance(r, types.GeneratorType):
+            return list(r)
+        return r
+
+    def run_objectpath(self, loader, node):
+        @dataclass
+        class Command:
+            what: List or Dict
+            objpath: str
+        cmd = Command(*loader.construct_sequence(node, deep=True))
+        val = self.run_objpath_core(cmd.what, cmd.objpath)
+        return val
+
+    def include_files_cat(self, files_glob, objpath):
+        node = list()
+        for f in Path(self.parameters_dir).glob(files_glob):
+            log.info(f'Concatenating from {f}...')
+            r = self.read_parameters_yaml(f)
+            if objpath is not None:
+                r = self.run_objpath_core(r, objpath)
+            node.append(r)
+        return node
+
+    def include_files_merge(self, files_glob, objpath):
+        node = dict()
+        for f in Path(self.parameters_dir).glob(files_glob):
+            log.info(f'Merging from {f}...')
+            r = self.read_parameters_yaml(f)
+            if objpath is not None:
+                r = self.run_objpath_core(r, objpath)
+            node.update(r)
+        return node
+
+    def include_files(self, loader, node):
+        @dataclass
+        class Command:
+            operation: str
+            files_glob: str
+            objpath: str = None
+        cmd = Command(*loader.construct_sequence(node, deep=True))
+        val = None
+        if cmd.operation == 'concat':
+            log.info(f'Concatenating include file(s) from {cmd.files_glob}...')
+            val = self.include_files_cat(cmd.files_glob, cmd.objpath)
+        else:
+            log.info(f'Merging include file(s) from {cmd.files_glob}...')
+            val = self.include_files_merge(cmd.files_glob, cmd.objpath)
+        log.debug(f'Successfully read include file(s) from {cmd.files_glob}')
         return val
 
     def set_builtin(self, loader, node):
@@ -318,7 +362,8 @@ class StackParameters(object):
 
     def read_parameters_yaml(self, filename):
         with open(filename, 'r') as f:
-            return yaml.load(f, Loader=self.parameters_loader)
+            r = yaml.load(f, Loader=self.parameters_loader)
+            return r
 
     def compute_parameter_value(self, param_name):
         common_val = self.common_parameters.get(param_name)

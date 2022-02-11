@@ -1,0 +1,21 @@
+---
+AccountData: &ACCOUNT_DATA !IncludeAll [concat, tenants/*.yaml]
+
+stacks:
+  - name: test-stackset
+    type: stackset
+    template: stackset.cf.yaml
+    admin_role_arn: arn:aws:iam::999999999999:role/service-role/AWSControlTowerStackSetRole
+    exec_role_name: AWSControlTowerExecution
+    parameters:
+      LogGroupPrefix: 'Global'
+    rollout: !ObjectPath [*ACCOUNT_DATA, '$.stacks."test-stackset"']
+
+  - name: another-test-stackset
+    type: stackset
+    template: stackset.cf.yaml
+    admin_role_arn: arn:aws:iam::999999999999:role/service-role/AWSControlTowerStackSetRole
+    exec_role_name: AWSControlTowerExecution
+    parameters:
+      LogGroupPrefix: 'Global'
+    rollout: !ObjectPath [*ACCOUNT_DATA, '$.stacks."another-test-stackset"']
