@@ -296,23 +296,27 @@ Let's say you have `config/dev/myapp_cert.pem` and you deploy a runtime configur
 
 In the environment configuration you can use the following tags in stack parameters specification:
 
-1. `!LambdaZip kmsParameters.zip` - will pass the correct S3 key to the uploaded kmsParameters.zip, so you can use it in your Lambda resources together with `TemplatesS3Bucket`
+1. `!IncludeAll [concat, tenants/*.yaml]` - will include all files by the specified wildcard. You may either choose to `concat` and you will get a list as a result, or `merge` and get a dict
 
-2. `!CloudformationTemplateS3Key support/bucket-policy.cf.yaml` - works very similar to `!Lambdazip` but for Cloudformation templates. Will pass down the correct S3 key to the specified CloudFormation stack. You can use it for managing nested stacks.
+2. `!ObjectPath [*CONFIG_OBJECT, '$.stacks."test-stack"']` - runs an ObjectPath expression on the specified data structure
 
-3. `!CloudformationTemplateS3Url support/bucket-policy.cf.yaml` - similar to the above, but contains the full S3 URL of the specified template.
+3. `!LambdaZip kmsParameters.zip` - will pass the correct S3 key to the uploaded kmsParameters.zip, so you can use it in your Lambda resources together with `TemplatesS3Bucket`
 
-4. `!StackOutput stack-name.OutputName` - will read the corresponding output from the specified stack and pass it down here. The stack needs to have been created above in the sequence.
+4. `!CloudformationTemplateS3Key support/bucket-policy.cf.yaml` - works very similar to `!Lambdazip` but for Cloudformation templates. Will pass down the correct S3 key to the specified CloudFormation stack. You can use it for managing nested stacks.
 
-5. `!Builtin TemplatesS3Bucket` - returns the value of a builtin parameter. This allows you to pass the builtin Seed parameters like `TemplatesS3Bucket` as different Cloudformation parameter names should you need to do so.
+5. `!CloudformationTemplateS3Url support/bucket-policy.cf.yaml` - similar to the above, but contains the full S3 URL of the specified template.
 
-6. `!EnvironmentVariable DOMAIN_NAME` - returns the value of an environment variable. If the variable is not set the deployment will abort.
+6. `!StackOutput stack-name.OutputName` - will read the corresponding output from the specified stack and pass it down here. The stack needs to have been created above in the sequence.
 
-7. `!SSMParameterDirect` - reads the value of the specified SSM parameter prefixed with `/product_name/installation_name/` from SSM and pushes it into the Cloudformation stack
+7. `!Builtin TemplatesS3Bucket` - returns the value of a builtin parameter. This allows you to pass the builtin Seed parameters like `TemplatesS3Bucket` as different Cloudformation parameter names should you need to do so.
 
-8. `!SSMParameterDeclared` - instead of reading the SSM parameter value this directive will construct its name prefixed with `/product_name/installation_name/` and pass it down to the Cloudformation stack, so you can use Cloudformation native SSM parameter handling
+8. `!EnvironmentVariable DOMAIN_NAME` - returns the value of an environment variable. If the variable is not set the deployment will abort.
 
-9. `!ArtifactVersion`, `!ArtifactRepo` and `!ArtifactImage` - these three tags are used together with a release manifest in release management
+9. `!SSMParameterDirect` - reads the value of the specified SSM parameter prefixed with `/product_name/installation_name/` from SSM and pushes it into the Cloudformation stack
+
+10. `!SSMParameterDeclared` - instead of reading the SSM parameter value this directive will construct its name prefixed with `/product_name/installation_name/` and pass it down to the Cloudformation stack, so you can use Cloudformation native SSM parameter handling
+
+11. `!ArtifactVersion`, `!ArtifactRepo` and `!ArtifactImage` - these three tags are used together with a release manifest in release management
 
 Release management
 ------
