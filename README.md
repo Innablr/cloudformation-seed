@@ -129,7 +129,13 @@ You can also factor common configuration into separate YAML files and include th
     rollout: !Include rollout.yaml                       # manage StackSet instances
 ```
 
-The runtime environment contains two sections:
+The runtime environment contains three sections:
+
+#### `ssm-parameters`
+
+You can specify a YAML dictionary in a simple `parameter_name: value` form. Cloudformation-Seed will set these values in SSM using a `/product_name/installation_name/parameter_name` convention for naming the keys.
+
+For SSM parameter values only verbatim values are supported, no substitution/dynamics, sorry.
 
 #### `common-parameters`
 
