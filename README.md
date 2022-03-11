@@ -55,7 +55,7 @@ cloudformation-seed --version
 
 ## Using `cloudformation-seed`
 
-See [the documentation]() for more details.
+See [the documentation](https://cloudformation-seed.readthedocs.io) for more details.
 
 You'll need to authenticate to AWS using the CLI before deploying stacks with `cloudformation-seed`.  Amazon's [quick configuration guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html) provides instructions on how to do this if you haven't already.
 
