@@ -2,9 +2,6 @@
 
 [![Github Actions build and test workflow](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml/badge.svg)](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml)
 [![Current cloudformation-seed version on PyPI](https://img.shields.io/pypi/v/cloudformation-seed.svg)](https://pypi.python.org/pypi/cloudformation-seed/)
-<!---
-[![Current Python version](https://img.shields.io/github/license/Innablr/cloudformation-seed.svg)](https://github.com/Innablr/cloudformation-seed/blob/main/LICENSE)
---->
 [![MIT License](https://img.shields.io/github/license/Innablr/cloudformation-seed.svg)](https://github.com/Innablr/cloudformation-seed/blob/main/LICENSE)
 
 ## Table of Contents
