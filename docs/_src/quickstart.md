@@ -2,7 +2,7 @@
 
 ## Setup
 
-## Deploying the test stack
+## Configuring and deploying the test stack
 
 ## Adding your own stacks
 

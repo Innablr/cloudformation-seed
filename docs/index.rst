@@ -13,12 +13,9 @@ Welcome to cloudformation-seed's documentation!
    _src/quickstart.md
    _src/tasks.md
    _src/tutorials.md
+   _src/parameters.md
    _src/integrations.md
    _src/flags.md
-   _src/parameters.md
-
-
-
 
 Indices and tables
 ==================
