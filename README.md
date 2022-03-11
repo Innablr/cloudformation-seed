@@ -7,7 +7,6 @@
 ## Table of Contents
 
 * [Purpose](#purpose)
-* [Requirements](#requirements)
 * [Installation](#installation)
   * [Docker](#docker)
   * [PyPI](#pypi)
@@ -34,19 +33,26 @@ It will:
 * Create and manage Cloudformation stacks
 * Create, roll out and manage Stacksets
 
-## Requirements
-
-You need a Mac, Linux or Windows machine/VM to run the Seed. On Windows it runs natively, as well as in WSL/WSL2.
-
 ## Installation
+
+`cloudformation-seed` can be installed and run in a Docker container, or installed as a package from PyPI.
 
 ### Docker
 
-
+#### Latest version
 
 ```
 $ docker pull ghcr.io/innablr/cloudformation-seed:latest
 $ docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
+```
+
+#### A specific version
+
+Replace `0.0.0` with the version that you want to install.
+
+```
+$ docker pull ghcr.io/innablr/cloudformation-seed:0.0.0
+$ docker run ghcr.io/innablr/cloudformation-seed:0.0.0 cloudformation-seed --version
 ```
 
 ### PyPI
@@ -58,11 +64,9 @@ $ cloudformation-seed --version
 
 ## Using `cloudformation-seed`
 
-### AWS CLI Authentication
+See [the documentation]() for more details.
 
-Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment.
-
- 
+You'll need to authenticate to AWS using the CLI before deploying stacks with `cloudformation-seed`.  Amazon's [quick configuration guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html) provides instructions on how to do this if you haven't already.
 
 ## Dependencies and frameworks
 
