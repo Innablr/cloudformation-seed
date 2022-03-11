@@ -16,7 +16,7 @@
 
 ## Purpose
 
-CloudFormation Seed is a tool for managing multi-stack CloudFormation deployments across different accounts, regions, and environments.  It handles passing parameters between CloudFormation stacks, and uses `StackSet`s to deploy multi-region and multi-account workloads.  Every CloudFormation Seed deployment also creates an S3 bucket, which ican be used to upload and manage CloudFormation templates and other large artefacts such as Lambda code files.
+CloudFormation Seed is a tool for managing multi-stack CloudFormation deployments across different accounts, regions, and environments.  It handles passing parameters between CloudFormation stacks, and uses `StackSet`s to deploy multi-region and multi-account workloads.  Every CloudFormation Seed deployment also creates an S3 bucket, which can be used to upload and manage CloudFormation templates and other large artefacts such as Lambda code files.
 
 ## Installation
 
