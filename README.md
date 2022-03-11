@@ -41,25 +41,31 @@ It will:
 
 #### Latest version
 
-```
-$ docker pull ghcr.io/innablr/cloudformation-seed:latest
-$ docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
+```bash
+# install
+docker pull ghcr.io/innablr/cloudformation-seed:latest
+# check version
+docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
 ```
 
 #### A specific version
 
 Replace `0.0.0` with the version that you want to install.
 
-```
-$ docker pull ghcr.io/innablr/cloudformation-seed:0.0.0
-$ docker run ghcr.io/innablr/cloudformation-seed:0.0.0 cloudformation-seed --version
+```bash
+# install
+docker pull ghcr.io/innablr/cloudformation-seed:0.0.0
+# check version
+docker run ghcr.io/innablr/cloudformation-seed:0.0.0 cloudformation-seed --version
 ```
 
 ### PyPI
 
-```
-$ pip install cloudformation-seed
-$ cloudformation-seed --version
+```bash
+# install
+pip install cloudformation-seed
+# check version
+cloudformation-seed --version
 ```
 
 ## Using `cloudformation-seed`
