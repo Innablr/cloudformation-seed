@@ -16,22 +16,7 @@
 
 ## Purpose
 
-This is a script that will help you deploy your Cloudformation project without hassle:
-
-* Handle Cloudformation deployments of any scale
-* Allow to do multiple deployments of the same code with a different installation name
-* Automate Lambda code handling
-* Get rid of hard dependencies of Cloudformation Exports, instead pass around Output values between stacks
-* Package the whole deployment in a Docker image and version it
-
-It will:
-
-* Automatically create an S3 bucket according to the project name
-* Upload the Cloudformation templates into the bucket
-* Package and checksum your Lambda code and upload it into the bucket
-* Upload arbitrary artifacts into the bucket so that they are available to your deployment
-* Create and manage Cloudformation stacks
-* Create, roll out and manage Stacksets
+CloudFormation Seed is a tool for managing multi-stack CloudFormation deployments across different accounts, regions, and environments.  It handles passing parameters between CloudFormation stacks, and uses `StackSet`s to deploy multi-region and multi-account workloads.  Every CloudFormation Seed deployment also creates an S3 bucket, which ican be used to upload and manage CloudFormation templates and other large artefacts such as Lambda code files.
 
 ## Installation
 
