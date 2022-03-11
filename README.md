@@ -8,10 +8,10 @@
 
 * [Purpose](#purpose)
 * [Requirements](#requirements)
-* [Installation Instructions](#installation-instructions)
+* [Installation](#installation)
   * [Docker](#docker)
   * [PyPI](#pypi)
-* [Documentation](#documentation)
+* [Using `cloudformation-seed`](#using-cloudformation-seed)
 * [Dependencies and Frameworks](#dependencies-and-frameworks)
 * [License](#license)
 
@@ -38,11 +38,11 @@ It will:
 
 You need a Mac, Linux or Windows machine/VM to run the Seed. On Windows it runs natively, as well as in WSL/WSL2.
 
-## Installation Instructions
+## Installation
 
 ### Docker
 
-(version number for stability)
+
 
 ```
 $ docker pull ghcr.io/innablr/cloudformation-seed:latest
@@ -56,42 +56,22 @@ $ pip install cloudformation-seed
 $ cloudformation-seed --version
 ```
 
-## Quick Start Guide
+## Using `cloudformation-seed`
 
 ### AWS CLI Authentication
 
 Authenticate to AWS using your method of choice, make sure that you have set the AWS Region you need for deployment.
 
-### Project Setup
-
-1. Create a new directory for your project
-2. Copy everything from the `examples` directory to the root of the project
-
-**Dawn Note:** there is going to be a balance between explaining the folder structure and not overloading the user with information.
-
-### Modifying Parameters
-
-3. Edit `parameters/dev.yaml` to your needs
-
-**Dawn Note:** this needs a lot more information, some of which can potentially be pulled out of the deep dive.
-
-### Deploying Templates
-
-Run `cloudformation-seed -c my-project -i x0 -e dev -d my.domain.cld deploy`
-
-**Dawn Note:** what do the flags do?  That ought to be explained somewhere.
-
-## Customisation
-
-## Release Management
-
-cloudformation-seed also can read a release manifest file if you specify it in the `-m` commandline argument. Release manifest contains artifact names, their versions and other information about the software that is being deployed by the Seed. You can then inform your Cloudformation stacks about the versions and images you are deploying using the `!ArtifactVersion`, `!ArtifactRepo` and `!ArtifactImage` tags in the runtime environment configuration.
-
-More documentation about release management is coming soon.
+ 
 
 ## Dependencies and frameworks
 
-* [Python dependencies - placeholder]() 
+* [Python](https://www.python.org/)
+* [boto3](https://pypi.org/project/boto3/) - AWS SDK for Python
+* [colorama](https://pypi.org/project/colorama/) - cross-platform coloured terminal text
+* [flake8](https://flake8.pycqa.org/en/latest/) - linting
+* [objectpath](http://objectpath.org/) - structured data querying
+* [PyYAML](https://pyyaml.org/) - YAML parser for Python
 
 ## License
 
