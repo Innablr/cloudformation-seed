@@ -18,8 +18,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'cloudformation-seed'
-copyright = '2022, Alex Bukharov'
-author = 'Alex Bukharov'
+copyright = '2022, Innablr'
+author = 'Innablr'
 
 
 # -- General configuration ---------------------------------------------------
