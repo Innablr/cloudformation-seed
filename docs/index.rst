@@ -8,7 +8,15 @@ Welcome to cloudformation-seed's documentation!
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+
+   _src/installation.md
+   _src/quickstart.md
+   _src/tasks.md
+   _src/tutorials.md
+   _src/integrations.md
+   _src/flags.md
+   _src/parameters.md
+
 
 
 

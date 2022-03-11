@@ -2,27 +2,19 @@
 
 [![Github Actions build and test workflow](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml/badge.svg)](https://github.com/Innablr/cloudformation-seed/actions/workflows/build-and-test.yaml)
 [![Current cloudformation-seed version on PyPI](https://img.shields.io/pypi/v/cloudformation-seed.svg)](https://pypi.python.org/pypi/cloudformation-seed/)
-[![Python 3.7 - placeholder]()]()
-[![MIT License - placeholder]()]()
+<!---
+[![Current Python version](https://img.shields.io/github/license/Innablr/cloudformation-seed.svg)](https://github.com/Innablr/cloudformation-seed/blob/main/LICENSE)
+--->
+[![MIT License](https://img.shields.io/github/license/Innablr/cloudformation-seed.svg)](https://github.com/Innablr/cloudformation-seed/blob/main/LICENSE)
 
 ## Table of Contents
 
 * [Purpose](#purpose)
-  * [Basic Features?]
-  * [Complicated Features?]
 * [Requirements](#requirements)
 * [Installation Instructions](#installation-instructions)
-  * [PyPI](#pypi)
   * [Docker](#docker)
-* [Quick Start Guide](#quick-start-guide)
-  * [AWS CLI Authentication](#aws-cli-authentication)
-  * [Project Setup](#project-setup)
-  * [Modifying Parameters](#modifying-parameters)
-  * [Adding Templates](#adding-templates)
-  * [Deploying Templates](#deploying-templates)
-  * [Modifying Dockerfiles](#modifying-dockerfiles)
-  * [Modifying Makefiles](#modifying-makefiles)
-* [Release Management](#release-management)
+  * [PyPI](#pypi)
+* [Documentation](#documentation)
 * [Dependencies and Frameworks](#dependencies-and-frameworks)
 * [License](#license)
 
@@ -51,13 +43,6 @@ You need a Mac, Linux or Windows machine/VM to run the Seed. On Windows it runs 
 
 ## Installation Instructions
 
-### PyPI
-
-```
-$ pip install cloudformation-seed
-$ cloudformation-seed --version
-```
-
 ### Docker
 
 (version number for stability)
@@ -67,9 +52,14 @@ $ docker pull ghcr.io/innablr/cloudformation-seed:latest
 $ docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
 ```
 
-## Quick Start Guide
+### PyPI
 
-**Dawn Note:** I'm tempted to have this as just 'deploy the test Lambda to one or more accounts', and move the configuration instructions into other files to avoid the main README becoming too dense.
+```
+$ pip install cloudformation-seed
+$ cloudformation-seed --version
+```
+
+## Quick Start Guide
 
 ### AWS CLI Authentication
 
@@ -88,27 +78,13 @@ Authenticate to AWS using your method of choice, make sure that you have set the
 
 **Dawn Note:** this needs a lot more information, some of which can potentially be pulled out of the deep dive.
 
-### Adding Templates
-
-4. Add more templates with `.cf.yaml` extensions under the `cloudformation` directory and include them in `parameters/dev.yaml`
-
-**Dawn Note:** do the templates require any sort of special configuration to work with `cf-seed`, or is this literally just copying files?
-
 ### Deploying Templates
 
 Run `cloudformation-seed -c my-project -i x0 -e dev -d my.domain.cld deploy`
 
 **Dawn Note:** what do the flags do?  That ought to be explained somewhere.
 
-### Modifying Dockerfiles
-
-Take the dockerfiles and makefiles from the `examples` directory and massage them around to suit your needs.
-
-**Dawn Note:** I can't find these, except for the Makefile in the KMS folder.  Am I missing something?  Also, I think that both this and the Make section could probably be their own docs.
-
-### Modifying Makefiles
-
-Take the dockerfiles and makefiles from the `examples` directory and massage them around to suit your needs.
+## Customisation
 
 ## Release Management
 
