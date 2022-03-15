@@ -31,6 +31,8 @@ CloudFormation Seed is a tool for managing multi-stack CloudFormation deployment
 docker pull ghcr.io/innablr/cloudformation-seed:latest
 # check version
 docker run ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed --version
+# run
+docker run -v /home/me/.aws:/root/.aws ghcr.io/innablr/cloudformation-seed:latest cloudformation-seed -i e0 -e dev -d dev.my-aws-domain.com deploy
 ```
 
 #### A specific version
