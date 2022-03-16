@@ -4,3 +4,5 @@
 
 * `!Include`
 * `!IncludeAll`
+
+## Artefact integration and release manifests

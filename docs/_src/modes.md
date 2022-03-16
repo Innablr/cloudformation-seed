@@ -11,5 +11,3 @@
 ## Packaging large files and templates
 
 ## Complex ecosystems
-
-## Artefact integration and release management
