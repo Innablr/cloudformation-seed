@@ -6,4 +6,6 @@
 
 ## Adding your own stacks
 
+## Tagging stacks
+
 ## Deleting stacks
