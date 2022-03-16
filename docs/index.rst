@@ -11,7 +11,7 @@ Welcome to cloudformation-seed's documentation!
 
    _src/installation.md
    _src/quickstart.md
-   _src/tasks.md
+   _src/modes.md
    _src/tutorials.md
    _src/parameters.md
    _src/integrations.md

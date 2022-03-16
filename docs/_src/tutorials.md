@@ -1,9 +1,13 @@
 # Tutorials
 
-## Deploying VPCs and subnets
+## VPCs and CIDR assignments
 
-## Setting up an AWS organisation
+## AWS organisations
 
-## Managing IAM identities and configuration
+## Serverless stacks (Lambda and DynamoDB)
+
+## Shared RDS instances
+
+## Environment management
 
 ## Using non-default execution roles
