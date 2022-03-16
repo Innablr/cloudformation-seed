@@ -44,6 +44,8 @@ Replace `0.0.0` with the version that you want to install.
 docker pull ghcr.io/innablr/cloudformation-seed:0.0.0
 # check version
 docker run ghcr.io/innablr/cloudformation-seed:0.0.0 cloudformation-seed --version
+# run
+docker run -e AWS_DEFAULT_REGION=ap-southeast-2 -v /home/me/.aws:/root/.aws ghcr.io/innablr/cloudformation-seed:0.0.0 cloudformation-seed -i e0 -e dev -d dev.my-aws-domain.com deploy
 ```
 
 ### PyPI
