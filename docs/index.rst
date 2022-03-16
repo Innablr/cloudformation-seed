@@ -14,6 +14,7 @@ Welcome to cloudformation-seed's documentation!
    _src/modes.md
    _src/tutorials.md
    _src/parameters.md
+   _src/advanced.md
    _src/integrations.md
    _src/flags.md
 
