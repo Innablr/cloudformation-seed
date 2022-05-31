@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from datetime import datetime
 from cloudformation_seed import util, s3_classes, lambdas, cfn_template, cfn_stack, cfn_stackset
 
 import yaml
@@ -82,7 +83,7 @@ class StackDeployer(object):
         gc.add_argument('-e', '--runtime-environment', required=True, help='Configuration section name')
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
         gc.add_argument('-o', '--org-arn', help='AWS Organisation ARN to allow S3 bucket access')
-        gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
+        gc.add_argument('-m', '--manifest', help='S3 key of a version manifest or local path to upload')
         gc.add_argument('-p', '--param-overrides', type=self.parse_override, metavar='stack-name:VarName=value',
             nargs='+', help='Override template parameters, if stack-name omitted VarName is overriden for every stack')
 
@@ -231,6 +232,12 @@ class StackDeployer(object):
         l.upload()
         if self.o.cleanup_lambda:
             l.cleanup()
+
+        if os.path.exists(self.o.manifest):
+            util.log_section('Uploading version manifest', bold=True)
+            upload_key = f"manifests/{datetime.now().isoformat()}/manifest.json"
+            s3_classes.S3Uploadable(self.o.manifest, self.bucket, upload_key).upload()
+            self.o.manifest = upload_key
 
         util.log_section('Loading version manifest', bold=True)
         m = util.VersionManifest(self.bucket, self.o.manifest)
