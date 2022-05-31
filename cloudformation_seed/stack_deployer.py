@@ -98,7 +98,6 @@ class StackDeployer(object):
 
         go = opts.add_argument_group('Operation parameters')
         go.add_argument('-v', '--verbose', action='store_true', help='Be more verbose')
-        go.add_argument('--upload-manifest', action='store_true', help='Upload manifest file if found locally.')
         go.add_argument('--no-color', action='store_true', help='Strip colors for basic terminals')
         go.add_argument('--cleanup-lambda', action='store_true', help='Run make clean after uploading Lambda functions')
         go.add_argument('--version', action='version', version='%(prog)s ' + VERSION, help='Print version number')
@@ -234,7 +233,7 @@ class StackDeployer(object):
         if self.o.cleanup_lambda:
             l.cleanup()
 
-        if os.path.exists(self.o.manifest) and self.o.upload_manifest:
+        if os.path.exists(self.o.manifest):
             util.log_section('Uploading version manifest', bold=True)
             upload_key = f"manifests/{datetime.now().isoformat()}/manifest.json"
             s3_classes.S3Uploadable(self.o.manifest, self.bucket, upload_key).upload()
