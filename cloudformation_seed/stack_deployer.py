@@ -233,7 +233,7 @@ class StackDeployer(object):
         if self.o.cleanup_lambda:
             l.cleanup()
 
-        if os.path.exists(self.o.manifest):
+        if self.o.manifest and os.path.exists(self.o.manifest):
             util.log_section('Uploading version manifest', bold=True)
             upload_key = f"manifests/{datetime.now().isoformat()}/manifest.json"
             s3_classes.S3Uploadable(self.o.manifest, self.bucket, upload_key).upload()
