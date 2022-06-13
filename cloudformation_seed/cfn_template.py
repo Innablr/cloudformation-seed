@@ -121,11 +121,11 @@ class CloudformationCollection(util.DirectoryScanner):
                     self.s3_bucket,
                     xs['template'],
                     s3_key_prefix,
-                    self.find_template_file(template_file),
+                    self.find_template_file(template_key),
                     xs
                 )
             self.templates.append(template)
-        
+
         util.log_section('Collecting templates not included in the environment')
         for xf in self.template_files:
             if len([xt for xt in self.templates if xt.template_key == xf[0]]) > 0:
