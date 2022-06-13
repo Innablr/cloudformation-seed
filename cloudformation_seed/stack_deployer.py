@@ -247,10 +247,10 @@ class StackDeployer(object):
                 self.bucket, self.o.appconfig_prefix)
         c.upload()
 
-        util.log_section('Collect and upload Cloudformation templates', bold=True)
+        util.log_section('Discovering Cloudformation templates', bold=True)
         t = cfn_template.CloudformationCollection(self.o.templates_dir, self.bucket,
                                                   self.o.templates_prefix, self.environment_parameters)
-        t.upload()
+        t.sync()
 
         util.log_section('Initialise Cloudformation environment', bold=True)
         e = StackParser(self.bucket, l, t, m, self.o)

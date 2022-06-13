@@ -32,11 +32,18 @@ class CloudformationTemplate(object):
                     file_path: str, template_parameters: Dict[str, Any]) -> None:
         self.template_key: str = template_key
         self.template_parameters: Dict[str, Any] = template_parameters
-        self.template_body: CloudformationTemplateBody = self.load_template(file_path)
-        self.s3_key_prefix: str = s3_key_prefix
-        self.s3_key: str = self.build_s3_key(self.template_key, self.template_checksum)
-        self.u: s3_classes.S3Uploadable = \
-            s3_classes.S3Uploadable(file_path, s3_bucket, f'{self.s3_key_prefix}/{self.s3_key}')
+        if s3_bucket and file_path:
+            self.template_body: CloudformationTemplateBody = self.load_template_file(file_path)
+            generated_key = self.build_s3_key(self.template_key, self.template_checksum)
+            self.s3_key = f'{s3_key_prefix}/{generated_key}'
+            self.o: s3_classes.S3Uploadable = \
+                s3_classes.S3Uploadable(file_path, s3_bucket, self.s3_key)
+        elif template_key.startswith("s3://"):
+            r = util.session.resource('s3')
+            s3_bucket_name, self.s3_key = template_key.replace("s3://", "").split("/", 1)
+            log.debug(f'Using external template in bucket {s3_bucket_name} with key {self.s3_key}')
+            s3_bucket = r.Bucket(s3_bucket_name)
+            self.o = s3_classes.S3Downloadble(s3_bucket, self.s3_key)
 
     @property
     def name(self) -> str:
@@ -63,11 +70,11 @@ class CloudformationTemplate(object):
 
     @property
     def template_s3_key(self) -> str:
-        return self.u.s3_key
+        return self.o.s3_key
 
     @property
     def template_url(self) -> str:
-        return self.u.s3_url
+        return self.o.s3_url
 
     def build_s3_key(self, template_key, template_checksum) -> str:
         if self.template_parameters.get('predictable_name', False) is True:
@@ -75,14 +82,18 @@ class CloudformationTemplate(object):
         return '/'.join([os.path.dirname(template_key),
             f'{template_checksum}-{os.path.basename(template_key)}']).strip('/')
 
-    def load_template(self, file_path: str) -> CloudformationTemplateBody:
+    def load_template_file(self, file_path: str) -> CloudformationTemplateBody:
         log.info(f'Loading template for stack {Fore.GREEN}{self.name}{Style.RESET_ALL} '
             f'from {Fore.GREEN}{file_path}{Style.RESET_ALL}...')
         with open(file_path, 'r') as f:
             return CloudformationTemplateBody(f.read())
 
-    def upload(self) -> None:
-        self.u.upload()
+    def sync(self) -> None:
+        if self.o and isinstance(self.o, s3_classes.S3Uploadable):
+            self.o.upload()
+        if self.o and isinstance(self.o, s3_classes.S3Downloadble):
+            self.o.download()
+            self.template_body: CloudformationTemplateBody = self.load_template_file(self.o.local_path)
 
 
 class CloudformationCollection(util.DirectoryScanner):
@@ -92,15 +103,29 @@ class CloudformationCollection(util.DirectoryScanner):
         self.environment_parameters: Dict['str', Any] = environment_parameters
         self.template_files: List[Tuple[str, str]] = self.scan_directories(path, '**/*.cf.yaml')
         util.log_section('Collecting templates included in the environment')
-        self.templates: List[CloudformationTemplate] = [
-            CloudformationTemplate(
-                self.s3_bucket,
-                xs['template'],
-                s3_key_prefix,
-                self.find_template_file(xs['template']),
-                xs
-            ) for xs in self.environment_parameters.get('stacks', list())
-        ]
+        self.templates: List[CloudformationTemplate] = []
+        for xs in self.environment_parameters.get('stacks', list()):
+            template_key = xs['template']
+            # use s3 path
+            if template_key.startswith("s3://"):
+                template = CloudformationTemplate(
+                    None,
+                    template_key,
+                    None,
+                    None,
+                    xs
+                )
+            else:
+                # find local file
+                template = CloudformationTemplate(
+                    self.s3_bucket,
+                    xs['template'],
+                    s3_key_prefix,
+                    self.find_template_file(template_file),
+                    xs
+                )
+            self.templates.append(template)
+        
         util.log_section('Collecting templates not included in the environment')
         for xf in self.template_files:
             if len([xt for xt in self.templates if xt.template_key == xf[0]]) > 0:
@@ -143,7 +168,7 @@ class CloudformationCollection(util.DirectoryScanner):
                 return xp
         raise util.InvalidStackConfiguration(f'Template file not found for {template_key}')
 
-    def upload(self) -> None:
+    def sync(self) -> None:
         for xt in [xt for n, xt in enumerate(self.templates)
                         if xt.template not in [xxt.template for xxt in self.templates[:n]]]:
-            xt.upload()
+            xt.sync()

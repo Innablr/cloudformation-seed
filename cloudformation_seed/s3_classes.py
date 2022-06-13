@@ -3,6 +3,7 @@ from typing import Any, Optional
 from cloudformation_seed import util
 
 import os
+import tempfile
 import hashlib
 import logging
 
@@ -10,6 +11,24 @@ from colorama import Fore, Style
 from botocore.exceptions import ClientError
 
 log = logging.getLogger('stack-deployer')
+
+class S3Downloadble(object):
+    def __init__(self, s3_bucket: Any, s3_key: str, local_path = None) -> None:
+        self.s3_key = s3_key
+        self.s3_bucket = s3_bucket
+        self.obj = self.s3_bucket.Object(self.s3_key)
+        if not local_path or not os.path.exists(local_path):
+            fd, self.local_path = tempfile.mkstemp()
+            os.close(fd)
+        else:
+            self.local_path = local_path
+
+    def download(self):
+        self.obj.download_file(self.local_path)
+
+    @property
+    def s3_url(self):
+        return f'{util.session.client("s3").meta.endpoint_url}/{self.s3_bucket.name}/{self.s3_key}'
 
 
 class S3Uploadable(object):
