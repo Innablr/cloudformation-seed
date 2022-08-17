@@ -504,7 +504,7 @@ class CloudformationStackSet(object):
             for summary in page['Summaries']:
                 if summary['Status'] in ['OUTDATED', 'INOPERABLE']:
                     failures.append(summary)
-        
+
         if failures:
             for fail in failures:
                 util.log_section(f'Stackset instance {fail["StackId"]} is {fail["Status"]}', color=Fore.RED, bold=True)
@@ -512,7 +512,6 @@ class CloudformationStackSet(object):
                 log.error(f'Stack status: {fail["StackInstanceStatus"]["DetailedStatus"]}')
                 log.error(f'Reason: {fail["StatusReason"]}')
             raise util.DeploymentFailed(f'Stackset {self.stack["StackSetName"]} has {len(failures)} failed instances.')
-
 
     @retry_pending
     def rollout_organization(self) -> None:
