@@ -500,7 +500,7 @@ class CloudformationStackSet(object):
     def check_stack_instances(self):
         failures = []
         c = util.session.client('cloudformation')
-        for page in c.get_paginator('list_stack_instances').paginate():
+        for page in c.get_paginator('list_stack_instances').paginate(StackSetName=self.stack_name):
             for summary in page['Summaries']:
                 if summary['Status'] in ['OUTDATED', 'INOPERABLE']:
                     failures.append(summary)
