@@ -9,3 +9,5 @@ RUN apk add --update --no-cache make zip unzip
 RUN pip install awscli cloudformation-seed==${CFSEED_VERSION}
 
 WORKDIR /deployment
+
+LABEL org.opencontainers.image.source = "https://github.com/Innablr/cloudformation-seed"
