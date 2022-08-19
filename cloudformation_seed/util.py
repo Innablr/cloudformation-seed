@@ -54,6 +54,7 @@ class StackTemplateInvalid(Exception): pass         # noqa E701,E302
 
 
 ORG_ARN_RE = re.compile(r'^arn:aws:organizations::\d{12}:\w+/(?P<org_id>o-\w+)')
+STACK_OUTPUT_RE = re.compile(r'^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
 
 
 class DirectoryScanner(object):
@@ -141,8 +142,6 @@ class StackParameters(object):
         self.param_overrides = options.param_overrides or list()
 
         self.parameters_loader = self.configure_parameters_loader()
-        self.STACK_OUTPUT_RE = \
-            re.compile(r'^(?P<stack_name>[^\.]+)\.(?P<output_name>[^\.:]+)(:(?P<default_value>.*))?$')
 
         self.environment_parameters = \
             self.read_parameters_yaml(
@@ -308,7 +307,7 @@ class StackParameters(object):
 
     def set_stack_output(self, loader, node):
         output_id = loader.construct_scalar(node)
-        m = self.STACK_OUTPUT_RE.match(output_id)
+        m = STACK_OUTPUT_RE.match(output_id)
         if m is None:
             raise InvalidStackConfiguration(f'Output specification [{output_id}] invalid, '
                 f'must be stack-name.OutputId:default value')

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from typing import List, Union
 from cloudformation_seed import util, s3_classes, lambdas, cfn_template, cfn_stack, cfn_stackset
 
 import yaml
@@ -32,7 +33,7 @@ class StackParser(object):
 
         self.stacks = self.setup_stacks()
 
-    def setup_stacks(self):
+    def read_stacks(self) -> List[Union[cfn_stack.CloudformationStack, cfn_stackset.CloudformationStackSet]]:
         stacks = list()
         for xt in self.templates.list_deployable():
             if xt.template_type == 'stack':
@@ -41,6 +42,15 @@ class StackParser(object):
             elif xt.template_type == 'stackset':
                 log.info(f'Adding stackset {Fore.GREEN}{xt.name}{Style.RESET_ALL}...')
                 stacks.append(cfn_stackset.CloudformationStackSet(self.installation_name, xt))
+        return stacks
+
+    def set_stack_dependencies(self, stacks) -> None:
+        for xs in stacks:
+            pass
+
+    def setup_stacks(self):
+        stacks = self.read_stacks()
+        self.set_stack_dependencies(stacks)
         return stacks
 
     def find_stack_output(self, stack_name, output_name):
