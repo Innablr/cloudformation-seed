@@ -79,7 +79,7 @@ class VersionManifest(object):
         log.info(f'Loading version manifest from {Fore.GREEN}s3://{s3_bucket.name}/{s3_key}{Style.RESET_ALL}')
         o = s3_bucket.Object(s3_key)
         r: Dict[str, Any] = o.get()
-        m: Dict[str, Any] = yaml.load(r['Body'])
+        m: Dict[str, Any] = yaml.load(r['Body'], Loader=yaml.SafeLoader)
         log.info(f'Loaded version manifest for release {Fore.YELLOW}{m["release"]["release_version"]}{Style.RESET_ALL} '
             f'(S3 version: {Fore.YELLOW}{o.version_id}{Style.RESET_ALL})')
         log.debug('Version Manifest'.center(64, '-'))

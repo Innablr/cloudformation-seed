@@ -437,6 +437,7 @@ class CloudformationStackSet(object):
             self.update_stackset()
         self.stack = self.find_existing_stackset()
         self.rollout_stackset()
+        self.check_stack_instances()
 
     def cleanup_stackset(self):
         if self.stackset_rollout is None:
@@ -495,6 +496,22 @@ class CloudformationStackSet(object):
             self.rollout_organization()
         else:
             self.rollout_accounts()
+
+    def check_stack_instances(self):
+        failures = []
+        c = util.session.client('cloudformation')
+        for page in c.get_paginator('list_stack_instances').paginate(StackSetName=self.stack_name):
+            for summary in page['Summaries']:
+                if summary['Status'] in ['OUTDATED', 'INOPERABLE']:
+                    failures.append(summary)
+
+        if failures:
+            for fail in failures:
+                util.log_section(f'Stackset instance {fail["StackId"]} is {fail["Status"]}', color=Fore.RED, bold=True)
+                log.error(f'Account/Region: {fail["Account"]}/{fail["Region"]}')
+                log.error(f'Stack status: {fail["StackInstanceStatus"]["DetailedStatus"]}')
+                log.error(f'Reason: {fail["StatusReason"]}')
+            raise util.DeploymentFailed(f'Stackset {self.stack["StackSetName"]} has {len(failures)} failed instances.')
 
     @retry_pending
     def rollout_organization(self) -> None:

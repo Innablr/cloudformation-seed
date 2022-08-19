@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from typing import List, Union
+from datetime import datetime
 from cloudformation_seed import util, s3_classes, lambdas, cfn_template, cfn_stack, cfn_stackset
 
 import yaml
@@ -92,7 +93,7 @@ class StackDeployer(object):
         gc.add_argument('-e', '--runtime-environment', required=True, help='Configuration section name')
         gc.add_argument('-d', '--dns-domain', required=True, help='DNS domain associated with this installation')
         gc.add_argument('-o', '--org-arn', help='AWS Organisation ARN to allow S3 bucket access')
-        gc.add_argument('-m', '--manifest', help='S3 key of a version manifest')
+        gc.add_argument('-m', '--manifest', help='S3 key of a version manifest or local path to upload')
         gc.add_argument('-p', '--param-overrides', type=self.parse_override, metavar='stack-name:VarName=value',
             nargs='+', help='Override template parameters, if stack-name omitted VarName is overriden for every stack')
 
@@ -242,6 +243,12 @@ class StackDeployer(object):
         if self.o.cleanup_lambda:
             l.cleanup()
 
+        if self.o.manifest and os.path.exists(self.o.manifest):
+            util.log_section('Uploading version manifest', bold=True)
+            upload_key = f"manifests/{datetime.now().isoformat()}/manifest.json"
+            s3_classes.S3Uploadable(self.o.manifest, self.bucket, upload_key).upload()
+            self.o.manifest = upload_key
+
         util.log_section('Loading version manifest', bold=True)
         m = util.VersionManifest(self.bucket, self.o.manifest)
 
@@ -250,10 +257,10 @@ class StackDeployer(object):
                 self.bucket, self.o.appconfig_prefix)
         c.upload()
 
-        util.log_section('Collect and upload Cloudformation templates', bold=True)
+        util.log_section('Discovering Cloudformation templates', bold=True)
         t = cfn_template.CloudformationCollection(self.o.templates_dir, self.bucket,
                                                   self.o.templates_prefix, self.environment_parameters)
-        t.upload()
+        t.sync()
 
         util.log_section('Initialise Cloudformation environment', bold=True)
         e = StackParser(self.bucket, l, t, m, self.o)
